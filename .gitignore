@@ -1,0 +1,28 @@
+# Environment variables — never push API keys
+.env
+news/.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Data files (too large for GitHub)
+data/raw/
+data/processed/
+
+# Saved models (too large for GitHub)
+models/saved_models/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+venv/
+env/
