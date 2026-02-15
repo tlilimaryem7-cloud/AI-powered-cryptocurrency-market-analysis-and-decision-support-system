@@ -313,8 +313,7 @@ def predict(coin: str) -> dict:
         "date"      : datetime.today().strftime("%Y-%m-%d"),
         "direction" : "UP 📈" if direction == 1 else "DOWN 📉",
         "confidence": round(confidence * 100, 2),
-        "model"     : "Stacking (RF+GB+XGB→LR)" if coin == "btc"
-                      else "GradientBoosting (tuned)",
+        "model"     : "AI Prediction Model",
     }
 
     print(f"\n{'='*55}")
