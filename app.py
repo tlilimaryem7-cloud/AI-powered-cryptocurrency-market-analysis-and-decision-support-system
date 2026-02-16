@@ -106,6 +106,7 @@ st.markdown(f"""
         color:{TEXT} !important; border-radius:8px !important;
     }}
     hr {{ border-color:{BORDER} !important; }}
+      
 </style>
 """, unsafe_allow_html=True)
 
@@ -297,7 +298,7 @@ def get_news(coin):  return fetch_news(coin)
 # ─────────────────────────────────────────────────────────────
 # SESSION STATE
 # ─────────────────────────────────────────────────────────────
-for k,v in [("page","home"),("chat_open",False),
+for k,v in [("page","home"),
             ("chat_history",[]),("preds",{}),("news",{})]:
     if k not in st.session_state:
         st.session_state[k] = v
@@ -332,13 +333,19 @@ last_upd = datetime.fromtimestamp(
 def navbar():
     c1, c2, c3 = st.columns([3,4,3])
     with c1:
-        if os.path.exists(LOGO_PATH):
-            st.markdown(open(LOGO_PATH).read(), unsafe_allow_html=True)
-        else:
-            st.markdown(f"""<span style="font-size:1.4rem;font-weight:800;
+        st.markdown(f"""
+        <div style="padding-top:4px;">
+            <span style="font-size:1.6rem;font-weight:800;
                 background:linear-gradient(90deg,{BTC},{ETH});
                 -webkit-background-clip:text;-webkit-text-fill-color:transparent;">
-                CoinTrend</span>""", unsafe_allow_html=True)
+                CoinTrend
+            </span>
+            <div style="font-size:0.68rem;color:{MUTED};
+                letter-spacing:1.5px;margin-top:2px;">
+                ONE STEP AHEAD OF THE MARKET
+            </div>
+        </div>""", unsafe_allow_html=True)
+    
     with c2:
         n1,n2,n3 = st.columns(3)
         pages = [("🏠 Home","home"),("₿ Bitcoin","btc"),("Ξ Ethereum","eth")]
@@ -661,10 +668,10 @@ def page_coin(coin):
                         config={"displayModeBar":False},
                         key=f"cvolume_{coin}")
 
+# ─────────────────────────────────────────────────────────────
+# FLOATING CHAT 
+# ─────────────────────────────────────────────────────────────
 
-# ─────────────────────────────────────────────────────────────
-# FLOATING CHAT
-# ─────────────────────────────────────────────────────────────
 QUICK = [
     ("₿ BTC tomorrow?",      "What will Bitcoin do tomorrow?",          "btc"),
     ("Ξ ETH tomorrow?",      "What will Ethereum do tomorrow?",         "eth"),
@@ -673,82 +680,164 @@ QUICK = [
 ]
 
 def floating_chat():
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown(f"<hr style='margin:0;'>", unsafe_allow_html=True)
 
-    hdr, toggle = st.columns([9,1])
-    with hdr:
+    # ── Initialize session state safely
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    if "chat_input" not in st.session_state:
+        st.session_state.chat_input = ""
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Centered layout
+    _, center, _ = st.columns([1, 4, 1])
+
+    with center:
+
+        # ── Header
         st.markdown(f"""
-        <div style="font-size:0.75rem;font-weight:600;color:{MUTED};
-            text-transform:uppercase;letter-spacing:0.1em;padding:12px 0 8px 0;">
-            🤖 AI Analyst Chat — Ask anything about crypto markets
-        </div>""", unsafe_allow_html=True)
-    with toggle:
-        lbl = "▼ Hide" if st.session_state.chat_open else "▲ Open"
-        if st.button(lbl, key="chat_toggle"):
-            st.session_state.chat_open = not st.session_state.chat_open
-            st.rerun()
+        <div style="text-align:center;margin-bottom:20px;">
+            <div style="display:inline-flex;flex-direction:column;
+                align-items:center;gap:8px;background:{NAVY2};
+                border:1px solid {BTC}44;border-radius:20px;
+                padding:16px 32px;">
+                <div style="width:40px;height:40px;border-radius:12px;
+                    background:linear-gradient(135deg,{BTC},{ETH});
+                    display:flex;align-items:center;justify-content:center;
+                    font-size:1.2rem;">✦</div>
+                <div style="font-size:1.0rem;font-weight:700;color:{TEXT};">
+                    CoinTrend AI Analyst
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    if not st.session_state.chat_open:
-        return
+        # ─────────────────────────────────────────
+        # CHAT HISTORY
+        # ─────────────────────────────────────────
+        if st.session_state.chat_history:
+            for msg in st.session_state.chat_history[-8:]:
 
-    # Quick questions
-    st.markdown("**Quick questions:**")
-    qcols = st.columns(4)
-    for i,(lbl,q,coin) in enumerate(QUICK):
-        with qcols[i]:
-            if st.button(lbl, key=f"q_{i}", use_container_width=True):
-                st.session_state.chat_history.append(
-                    {"role":"user","content":q,"coin":coin})
-                with st.spinner("Analyzing..."):
-                    nd = st.session_state.news.get(coin, get_news(coin))
-                    pd_ = st.session_state.preds.get(coin, get_pred(coin))
-                    arts = retrieve(q, nd["all_articles"], coin)
-                    ctx  = format_context(arts, coin, pd_)
-                    resp = analyze(q, ctx)
-                st.session_state.chat_history.append(
-                    {"role":"assistant","content":resp})
-                st.rerun()
+                if msg["role"] == "user":
+                    st.markdown(f"""
+                    <div style="background:#1d4ed8;
+                        border-radius:18px 18px 4px 18px;
+                        padding:10px 16px;margin:8px 0;
+                        max-width:75%;margin-left:auto;
+                        font-size:0.85rem;">
+                        {msg['content']}
+                    </div>
+                    """, unsafe_allow_html=True)
 
-    # Chat history
-    for msg in st.session_state.chat_history[-8:]:
-        if msg["role"] == "user":
-            st.markdown(f"""
-            <div style="background:#1d4ed8;border-radius:12px 12px 2px 12px;
-                padding:8px 14px;margin:6px 0;max-width:80%;margin-left:auto;
-                font-size:0.84rem;">{msg['content']}</div>""",
-                unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div style="background:{NAVY3};border-radius:12px 12px 12px 2px;
-                padding:10px 14px;margin:6px 0;max-width:92%;
-                font-size:0.84rem;line-height:1.5;">{msg['content']}</div>""",
-                unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div style="background:{NAVY2};
+                        border:1px solid {BORDER};
+                        border-radius:18px 18px 18px 4px;
+                        padding:12px 16px;margin:8px 0;
+                        font-size:0.85rem;line-height:1.6;">
+                        {msg['content']}
+                    </div>
+                    """, unsafe_allow_html=True)
 
-    # Input
-    ic, bc = st.columns([6,1])
-    with ic:
+            st.markdown("<br>", unsafe_allow_html=True)
+
+        # ─────────────────────────────────────────
+        # INPUT (ENTER SEND ENABLED)
+        # ─────────────────────────────────────────
+        st.markdown("""
+        <style>
+        input[type="text"] {
+            caret-color: light blue !important;  
+        }
+        </style>
+        """, unsafe_allow_html=True)
         user_input = st.text_input(
-            "Ask...", placeholder="e.g. Is now a good time to buy ETH?",
-            key="chat_input", label_visibility="collapsed")
-    with bc:
-        send = st.button("Analyze 🔍", key="chat_send",
-                         use_container_width=True)
+            "Ask...",
+            placeholder="Ask me anything about BTC, ETH or market conditions...",
+            key="chat_input",
+            label_visibility="collapsed"
+        )
 
-    if send and user_input:
+        # ENTER triggers automatically because text_input updates state
+        send = bool(user_input)
+
+        # ─────────────────────────────────────────
+        # QUICK QUESTIONS
+        # ─────────────────────────────────────────
+
+        st.markdown(f"""
+        <div style="margin-top:10px;font-size:0.68rem;color:{MUTED};
+            text-transform:uppercase;letter-spacing:0.08em;
+            margin-bottom:6px;text-align:center;">
+            Quick Questions
+        </div>
+        """, unsafe_allow_html=True)
+
+        qcols = st.columns(4)
+
+        for i, (lbl, q, coin) in enumerate(QUICK):
+            with qcols[i]:
+                if st.button(lbl, key=f"q_{i}", use_container_width=True):
+
+                    st.session_state.chat_history.append(
+                        {"role": "user", "content": q, "coin": coin}
+                    )
+
+                    with st.spinner("Analyzing..."):
+                        nd   = st.session_state.news.get(coin, get_news(coin))
+                        pd_  = st.session_state.preds.get(coin, get_pred(coin))
+                        arts = retrieve(q, nd["all_articles"], coin)
+                        ctx  = format_context(arts, coin, pd_)
+                        resp = analyze(q, ctx)
+
+                    st.session_state.chat_history.append(
+                        {"role": "assistant", "content": resp}
+                    )
+
+                    st.rerun()
+
+        # ─────────────────────────────────────────
+        # CLEAR CHAT
+        # ─────────────────────────────────────────
+
+        if st.session_state.chat_history:
+            _, clr, _ = st.columns([4, 2, 4])
+            with clr:
+                if st.button("🗑️ Clear", key="clear_chat", use_container_width=True):
+                    st.session_state.chat_history = []
+                    st.rerun()
+
+    # ─────────────────────────────────────────
+    # HANDLE SEND (SAFE STATE CLEAR)
+    # ─────────────────────────────────────────
+
+    if send:
+
         coin = "eth" if any(
             w in user_input.lower()
-            for w in ["eth","ethereum","ether"]) else "btc"
+            for w in ["eth", "ethereum", "ether"]
+        ) else "btc"
+
         st.session_state.chat_history.append(
-            {"role":"user","content":user_input,"coin":coin})
+            {"role": "user", "content": user_input, "coin": coin}
+        )
+
         with st.spinner("Analyzing..."):
             nd   = st.session_state.news.get(coin, get_news(coin))
             pd_  = st.session_state.preds.get(coin, get_pred(coin))
             arts = retrieve(user_input, nd["all_articles"], coin)
             ctx  = format_context(arts, coin, pd_)
             resp = analyze(user_input, ctx)
+
         st.session_state.chat_history.append(
-            {"role":"assistant","content":resp})
+            {"role": "assistant", "content": resp}
+        )
+
+        # SAFE CLEAR (NO STREAMLIT ERROR)
+        del st.session_state["chat_input"]
+
         st.rerun()
 
 
