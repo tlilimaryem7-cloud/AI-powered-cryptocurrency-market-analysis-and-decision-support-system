@@ -1,17 +1,14 @@
 # ============================================================
-# COINTREND — "One step ahead of the market"
+# COINTREND — "One Step Ahead of the Market"
 # ============================================================
-# Multi-page Streamlit App
-# Pages : Home | BTC Detail | ETH Detail
-# Chat  : Floating chatbot on all pages
-#
-# Run   : streamlit run app.py
+# Run : streamlit run app.py
 # ============================================================
 
 import sys
 import os
 import time
 import subprocess
+import numpy as np
 
 BASE_PATH = r"C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system"
 sys.path.append(BASE_PATH)
@@ -19,94 +16,263 @@ sys.path.append(os.path.join(BASE_PATH, "src"))
 
 import streamlit as st
 import pandas    as pd
+import yfinance  as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime        import datetime
 
 from src.live_pipeline   import predict
 from news.tavily_fetcher import fetch_news
-from news.rag            import retrieve, format_context
-from news.llm            import analyze
+from news.rag            import retrieve
+from chatbot             import chat
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title = "CoinTrend",
-    page_icon  = "📈",
-    layout     = "wide",
-    initial_sidebar_state = "collapsed"
+    page_title="CoinTrend",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 # ─────────────────────────────────────────────────────────────
-# THEME COLORS
+# COLORS
 # ─────────────────────────────────────────────────────────────
 NAVY   = "#0f172a"
 NAVY2  = "#1e293b"
 NAVY3  = "#334155"
-BORDER = "#334155"
+BORDER = "#2d3f55"
 TEXT   = "#e2e8f0"
 MUTED  = "#94a3b8"
 BTC    = "#f7931a"
 ETH    = "#627eea"
-GREEN  = "#22c55e"
-RED    = "#ef4444"
-PURPLE = "#a855f7"
-AMBER  = "#f59e0b"
+GREEN  = "#10b981"
+RED    = "#f43f5e"
+INDIGO = "#818cf8"
+AMBER  = "#fb923c"
 
 # ─────────────────────────────────────────────────────────────
 # PATHS
 # ─────────────────────────────────────────────────────────────
 FEATURES_PATH = os.path.join(BASE_PATH, "data", "processed", "crypto_features.csv")
 PIPELINE_PATH = os.path.join(BASE_PATH, "src", "pipeline.py")
-LOGO_PATH     = os.path.join(BASE_PATH, "assets", "cointrend_logo.svg")
 REFRESH_HOURS = 12
+
+# ─────────────────────────────────────────────────────────────
+# LOGO (inline SVG)
+# ─────────────────────────────────────────────────────────────
+LOGO_SVG = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 65" width="200" height="50">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f7931a;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#627eea;stop-opacity:1"/>
+    </linearGradient>
+    <linearGradient id="cg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f7931a;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#627eea;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(8,10)">
+    <rect x="0"  y="28" width="6" height="12" rx="1.5" fill="#f7931a" opacity="0.7"/>
+    <rect x="9"  y="20" width="6" height="20" rx="1.5" fill="#f7931a" opacity="0.85"/>
+    <rect x="18" y="12" width="6" height="28" rx="1.5" fill="url(#cg)"/>
+    <rect x="27" y="6"  width="6" height="34" rx="1.5" fill="#627eea" opacity="0.85"/>
+    <polyline points="3,34 12,24 21,16 30,8" fill="none"
+      stroke="url(#grad)" stroke-width="2"
+      stroke-linecap="round" stroke-linejoin="round"/>
+    <polygon points="30,4 34,10 26,10" fill="#627eea"/>
+  </g>
+  <text x="56" y="30" font-family="Arial,sans-serif"
+    font-size="22" font-weight="800" fill="url(#grad)"
+    letter-spacing="-0.5">CoinTrend</text>
+  <line x1="57" y1="38" x2="255" y2="38" stroke="#30363d" stroke-width="0.5"/>
+  <text x="57" y="52" font-family="Arial,sans-serif"
+    font-size="9" font-weight="400" fill="#8b949e"
+    letter-spacing="1.8">ONE STEP AHEAD OF THE MARKET</text>
+</svg>"""
 
 # ─────────────────────────────────────────────────────────────
 # CSS
 # ─────────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
-    .stApp {{ background-color:{NAVY} !important; color:{TEXT}; }}
-    .block-container {{ padding:1.5rem 2rem !important; }}
-    #MainMenu, footer, header {{ visibility:hidden; }}
-    .stDeployButton {{ display:none; }}
+  .stApp {{ background:{NAVY} !important; color:{TEXT}; }}
+  .block-container {{ padding:1.2rem 2rem !important; max-width:1400px; }}
+  #MainMenu, footer, header {{ visibility:hidden; }}
+  .stDeployButton {{ display:none; }}
 
-    .card {{
-        background:{NAVY2}; border:1px solid {BORDER};
-        border-radius:12px; padding:16px 20px; margin:4px 0;
-    }}
-    .card-label {{
-        font-size:0.70rem; color:{MUTED}; text-transform:uppercase;
-        letter-spacing:0.08em; margin-bottom:4px;
-    }}
-    .card-value {{ font-size:1.4rem; font-weight:700; }}
-    .card-sub   {{ font-size:0.73rem; color:{MUTED}; margin-top:3px; }}
+  /* Cards */
+  .card {{
+    background:{NAVY2}; border:1px solid {BORDER};
+    border-radius:14px; padding:18px 20px; margin:4px 0;
+    transition:border-color 0.2s;
+  }}
+  .card:hover {{ border-color:{BTC}55; }}
+  .card-label {{
+    font-size:0.68rem; color:{MUTED}; text-transform:uppercase;
+    letter-spacing:0.1em; margin-bottom:6px;
+  }}
+  .card-value {{ font-size:1.35rem; font-weight:700; }}
+  .card-sub {{ font-size:0.72rem; color:{MUTED}; margin-top:4px; }}
 
-    .section-title {{
-        font-size:0.75rem; font-weight:600; color:{MUTED};
-        text-transform:uppercase; letter-spacing:0.1em;
-        padding:16px 0 8px 0; border-bottom:1px solid {BORDER};
-        margin-bottom:12px;
-    }}
-    .pred-card {{
-        background:{NAVY2}; border-radius:16px; padding:28px 24px;
-        border:1px solid {BORDER}; text-align:center;
-    }}
-    .stButton > button {{
-        background:{NAVY2} !important; border:1px solid {BORDER} !important;
-        color:{TEXT} !important; border-radius:8px !important;
-        font-size:0.82rem !important;
-    }}
-    .stButton > button:hover {{
-        border-color:{BTC} !important;
-    }}
-    div[data-testid="stTextInput"] input {{
-        background:{NAVY2} !important; border:1px solid {BORDER} !important;
-        color:{TEXT} !important; border-radius:8px !important;
-    }}
-    hr {{ border-color:{BORDER} !important; }}
-      
+  /* Section titles */
+  .section-title {{
+    font-size:0.72rem; font-weight:700; color:{MUTED};
+    text-transform:uppercase; letter-spacing:0.12em;
+    padding:18px 0 10px 0; border-bottom:1px solid {BORDER};
+    margin-bottom:14px;
+  }}
+
+  /* Hero */
+  .hero-card {{
+    background:linear-gradient(135deg,{NAVY2} 0%,#0f2540 100%);
+    border-radius:20px; padding:32px 28px;
+    border:1px solid {BORDER};
+  }}
+  .hero-glow-up   {{ box-shadow:0 0 60px {GREEN}22,0 0 120px {GREEN}11; border-color:{GREEN}44 !important; }}
+  .hero-glow-down {{ box-shadow:0 0 60px {RED}22,0 0 120px {RED}11;   border-color:{RED}44   !important; }}
+
+  /* Signal pills */
+  .signal-pill {{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:7px 14px; border-radius:999px;
+    font-size:0.78rem; font-weight:600; margin:3px;
+  }}
+  .pill-bull {{ background:{GREEN}18; border:1px solid {GREEN}55; color:{GREEN}; }}
+  .pill-bear {{ background:{RED}18;   border:1px solid {RED}55;   color:{RED}; }}
+  .pill-neut {{ background:{MUTED}18; border:1px solid {MUTED}44; color:{MUTED}; }}
+
+  /* CSS Tooltips */
+  .tt {{ position:relative; display:inline-block; cursor:help; }}
+  .tt .tip {{
+    visibility:hidden; opacity:0;
+    background:{NAVY3}; color:{TEXT};
+    border:1px solid {BORDER}; border-radius:10px;
+    padding:10px 14px; font-size:0.74rem; line-height:1.5;
+    width:230px; position:absolute; z-index:9999;
+    bottom:calc(100% + 8px); left:50%;
+    transform:translateX(-50%);
+    transition:opacity 0.18s; pointer-events:none;
+    box-shadow:0 8px 32px rgba(0,0,0,0.45);
+  }}
+  .tt .tip::after {{
+    content:""; position:absolute; top:100%; left:50%;
+    transform:translateX(-50%);
+    border:6px solid transparent; border-top-color:{BORDER};
+  }}
+  .tt:hover .tip {{ visibility:visible; opacity:1; }}
+  .ii {{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:15px; height:15px; border-radius:50%;
+    background:{NAVY3}; color:{MUTED};
+    font-size:0.62rem; font-weight:700;
+    margin-left:3px; vertical-align:middle;
+  }}
+
+  /* Signal matrix */
+  .sig-card {{
+    background:{NAVY2}; border:1px solid {BORDER};
+    border-radius:12px; padding:14px 16px; margin:4px 0;
+  }}
+  .sig-label {{
+    font-size:0.67rem; color:{MUTED}; text-transform:uppercase;
+    letter-spacing:0.09em; margin-bottom:4px;
+  }}
+  .sig-value  {{ font-size:1.1rem; font-weight:700; }}
+  .sig-interp {{ font-size:0.72rem; margin-top:3px; }}
+
+  /* News */
+  .news-card {{
+    background:{NAVY2}; border:1px solid {BORDER};
+    border-radius:12px; padding:14px 16px; margin:6px 0;
+    transition:border-color 0.2s;
+  }}
+  .news-card:hover {{ border-color:{BTC}44; }}
+  .tag-bull {{ background:{GREEN}20; color:{GREEN}; border-radius:6px; padding:2px 8px; font-size:0.67rem; font-weight:600; }}
+  .tag-bear {{ background:{RED}20;   color:{RED};   border-radius:6px; padding:2px 8px; font-size:0.67rem; font-weight:600; }}
+  .tag-neut {{ background:{MUTED}20; color:{MUTED}; border-radius:6px; padding:2px 8px; font-size:0.67rem; font-weight:600; }}
+
+  /* Buttons */
+  .stButton > button {{
+    background:{NAVY2} !important; border:1px solid {BORDER} !important;
+    color:{TEXT} !important; border-radius:8px !important;
+    font-size:0.82rem !important; transition:all 0.2s !important;
+  }}
+  .stButton > button:hover {{ border-color:{BTC} !important; color:{BTC} !important; }}
+
+  /* Inputs */
+  div[data-testid="stTextInput"] input {{
+    background:{NAVY2} !important; border:1px solid {BORDER} !important;
+    color:{TEXT} !important; border-radius:10px !important;
+    font-size:0.9rem !important;
+  }}
+  div[data-testid="stSelectbox"] > div > div {{
+    background:{NAVY2} !important; border:1px solid {BORDER} !important;
+    color:{TEXT} !important; border-radius:8px !important;
+  }}
+
+  /* ── FAB (fixed chat button bottom-right) ── */
+  #chat-fab-container {{
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    z-index: 99999;
+  }}
+  #chat-fab-container button {{
+    width: 58px !important;
+    height: 58px !important;
+    border-radius: 50% !important;
+    background: linear-gradient(135deg, {BTC}, {ETH}) !important;
+    border: none !important;
+    font-size: 1.4rem !important;
+    padding: 0 !important;
+    box-shadow: 0 4px 24px rgba(247,147,26,0.45) !important;
+    color: white !important;
+    transition: transform 0.2s, box-shadow 0.2s !important;
+  }}
+  #chat-fab-container button:hover {{
+    transform: scale(1.1) !important;
+    box-shadow: 0 6px 32px rgba(247,147,26,0.65) !important;
+    border: none !important;
+    color: white !important;
+  }}
+
+  /* Chat panel */
+  .chat-panel {{
+    background:{NAVY2}; border:1px solid {BORDER};
+    border-radius:20px; overflow:hidden;
+    box-shadow:0 8px 48px rgba(0,0,0,0.55);
+    margin-bottom:14px;
+  }}
+  .chat-header {{
+    background:linear-gradient(135deg,{NAVY3},{NAVY2});
+    padding:14px 18px; border-bottom:1px solid {BORDER};
+    display:flex; align-items:center; gap:10px;
+  }}
+  .chat-msg-user {{
+    background:#1d4ed8; border-radius:14px 14px 4px 14px;
+    padding:8px 14px; margin:4px 0 4px auto;
+    max-width:78%; font-size:0.82rem; width:fit-content;
+  }}
+  .chat-msg-bot {{
+    background:{NAVY3}; border:1px solid {BORDER};
+    border-radius:14px 14px 14px 4px;
+    padding:10px 14px; margin:4px 0;
+    font-size:0.82rem; line-height:1.55;
+  }}
+
+  /* Compact quick question chips */
+  .chip-row {{ display:flex; flex-wrap:wrap; gap:5px; padding:8px 0; }}
+  .chip {{
+    display:inline-block; padding:4px 11px;
+    border:1px solid {BORDER}; border-radius:999px;
+    font-size:0.70rem; color:{MUTED}; background:{NAVY3};
+    white-space:nowrap;
+  }}
+
+  hr {{ border-color:{BORDER} !important; margin:6px 0 !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -114,178 +280,189 @@ st.markdown(f"""
 # ─────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────
+def hex_rgba(h, a=0.1):
+    r, g, b = int(h[1:3],16), int(h[3:5],16), int(h[5:7],16)
+    return f"rgba({r},{g},{b},{a})"
+
+def tt(label, tip):
+    """Pre-built CSS tooltip — call BEFORE embedding in f-strings."""
+    return (f'<span class="tt">{label}'
+            f'<span class="ii">i</span>'
+            f'<span class="tip">{tip}</span></span>')
+
 def fear_greed_label(s):
     if s <= 24: return "Extreme Fear",  RED
-    if s <= 44: return "Fear",          "#f97316"
-    if s <= 55: return "Neutral",       AMBER
+    if s <= 44: return "Fear",          AMBER
+    if s <= 55: return "Neutral",       MUTED
     if s <= 74: return "Greed",         "#84cc16"
     return "Extreme Greed",              GREEN
 
 def conf_color(c):
     if c >= 70: return GREEN
-    if c >= 60: return AMBER
+    if c >= 58: return AMBER
     return RED
 
-def rsi_label(r):
-    if r >= 70: return "Overbought", RED
-    if r <= 30: return "Oversold",   GREEN
-    return "Neutral",                 MUTED
+def rsi_state(r):
+    if r >= 70: return "Overbought ⚠️", RED,   "bear"
+    if r <= 30: return "Oversold 🟢",   GREEN, "bull"
+    return f"Neutral ({r:.0f})",          MUTED, "neut"
 
-def macd_label(h):
-    return ("Bullish ↑", GREEN) if h > 0 else ("Bearish ↓", RED)
+def macd_state(h):
+    if h > 0:  return "Bullish ↑", GREEN, "bull"
+    return "Bearish ↓",             RED,   "bear"
 
-def bb_label(p):
-    if p > 0.8: return "Near Upper — Overbought", RED
-    if p < 0.2: return "Near Lower — Oversold",   GREEN
-    return "Mid Band — Neutral",                   MUTED
+def bb_state(p):
+    if p > 0.8: return "Near Upper — Overbought", RED,   "bear"
+    if p < 0.2: return "Near Lower — Oversold",   GREEN, "bull"
+    return "Mid Band — Neutral",                   MUTED, "neut"
 
-def mom_label(a):
-    if a > 0.01:  return "Accelerating Up ↑",   GREEN
-    if a < -0.01: return "Accelerating Down ↓",  RED
-    return "Neutral →",                           MUTED
+def mom_state(a):
+    if a > 0.01:  return "Accelerating Up ↑",   GREEN, "bull"
+    if a < -0.01: return "Decelerating ↓",       RED,   "bear"
+    return "Flat →",                               MUTED, "neut"
 
-def hex_rgba(h, a=0.1):
-    r,g,b = int(h[1:3],16), int(h[3:5],16), int(h[5:7],16)
-    return f"rgba({r},{g},{b},{a})"
+def vix_state(v):
+    if v > 30: return "Extreme Fear ⚠️", RED,   "bear"
+    if v > 20: return "Elevated",         AMBER, "neut"
+    return "Low — Risk On ✅",             GREEN, "bull"
+
+def dxy_state(d):
+    if d > 0.001:  return "Strong ↑ — Bearish Crypto", RED,   "bear"
+    if d > 0:      return "Mild ↑ — Slight Headwind",   AMBER, "neut"
+    if d > -0.001: return "Mild ↓ — Slight Tailwind",   GREEN, "bull"
+    return "Weak ↓ — Bullish Crypto",                    GREEN, "bull"
 
 def fg_bar(score):
     lb, col = fear_greed_label(score)
     return f"""
-    <div style="margin:6px 0 2px 0;">
-        <div style="position:relative;height:10px;border-radius:5px;
-            background:linear-gradient(to right,#ef4444 0%,#f97316 25%,
-            #eab308 50%,#84cc16 75%,#22c55e 100%);">
-            <div style="position:absolute;left:{score}%;transform:translateX(-50%);
-                top:-5px;width:4px;height:20px;background:white;
-                border-radius:2px;box-shadow:0 0 6px rgba(255,255,255,0.8);">
-            </div>
+    <div style="margin:8px 0 2px 0;">
+      <div style="position:relative;height:10px;border-radius:5px;
+          background:linear-gradient(to right,{RED} 0%,{AMBER} 25%,
+          #eab308 50%,#84cc16 75%,{GREEN} 100%);">
+        <div style="position:absolute;left:{score}%;
+            transform:translateX(-50%);top:-5px;
+            width:4px;height:20px;background:white;border-radius:2px;
+            box-shadow:0 0 8px rgba(255,255,255,0.9);">
         </div>
-        <div style="display:flex;justify-content:space-between;
-            font-size:0.62rem;color:{MUTED};margin-top:5px;">
-            <span>Extreme Fear</span>
-            <span style="color:{col};font-weight:700;">{int(score)} — {lb}</span>
-            <span>Extreme Greed</span>
-        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;
+          font-size:0.62rem;color:{MUTED};margin-top:6px;">
+        <span>Extreme Fear</span>
+        <span style="color:{col};font-weight:700;">{int(score)} — {lb}</span>
+        <span>Extreme Greed</span>
+      </div>
     </div>"""
 
-def chart_base(fig, h=260):
+def gauge_bar(pct, color):
+    """Simple percentage gauge bar."""
+    pct = max(0, min(100, pct))
+    return f"""
+    <div style="background:{NAVY3};border-radius:4px;height:7px;margin:6px 0 3px 0;">
+      <div style="background:{color};width:{pct:.0f}%;
+          height:7px;border-radius:4px;"></div>
+    </div>"""
+
+def news_sentiment(content):
+    bull_kw = ["rally","surge","gain","inflow","bullish","recovery",
+               "adoption","institutional","accumulate","positive","etf"]
+    bear_kw = ["drop","fall","crash","fear","outflow","bearish",
+               "liquidation","ban","concern","plunge","slump"]
+    text = content.lower()
+    b = sum(1 for k in bull_kw if k in text)
+    e = sum(1 for k in bear_kw if k in text)
+    if b > e:   return "Bullish", "tag-bull"
+    if e > b:   return "Bearish", "tag-bear"
+    return "Neutral", "tag-neut"
+
+def chart_base(fig, h=280):
     fig.update_layout(
         paper_bgcolor=NAVY2, plot_bgcolor=NAVY2,
-        margin=dict(l=8,r=8,t=8,b=8), height=h,
-        showlegend=False, font=dict(color=MUTED, size=10)
+        margin=dict(l=10,r=10,t=14,b=10), height=h,
+        showlegend=False, font=dict(color=MUTED, size=10),
+        hovermode="x unified",
     )
-    fig.update_xaxes(showgrid=False, color=MUTED, tickfont=dict(size=9))
-    fig.update_yaxes(showgrid=True,  gridcolor=NAVY3,
-                     color=MUTED, tickfont=dict(size=9), zeroline=False)
+    fig.update_xaxes(showgrid=False, color=MUTED, tickfont=dict(size=9),
+                     zeroline=False, showspikes=True, spikecolor=MUTED,
+                     spikethickness=1, spikedash="dot")
+    fig.update_yaxes(showgrid=True, gridcolor=NAVY3, color=MUTED,
+                     tickfont=dict(size=9), zeroline=False)
     return fig
 
-def period_sel(key):
+def period_dd(key, default="90D"):
     opts = {"7D":7,"30D":30,"90D":90,"180D":180,"1Y":365}
-    if key not in st.session_state:
-        st.session_state[key] = "90D"
-    cols = st.columns(len(opts))
-    for i,(lbl,_) in enumerate(opts.items()):
-        with cols[i]:
-            if st.button(lbl, key=f"p_{key}_{lbl}",
-                         use_container_width=True):
-                st.session_state[key] = lbl
-                st.rerun()
-    return opts[st.session_state[key]]
+    sel  = st.selectbox("", list(opts.keys()),
+                        index=list(opts.keys()).index(default),
+                        key=f"dd_{key}", label_visibility="collapsed")
+    return opts[sel]
 
 
 # ─────────────────────────────────────────────────────────────
-# CHARTS
-# ─────────────────────────────────────────────────────────────
-def chart_price_rsi(df, coin, days, color):
-    sub = df[df["coin"]==coin].tail(days)
-    fig = make_subplots(rows=2,cols=1,shared_xaxes=True,
-                        row_heights=[0.65,0.35],vertical_spacing=0.05)
-    fig.add_trace(go.Scatter(x=sub["timestamp"],y=sub["price"],
-        mode="lines",line=dict(color=color,width=2),
-        fill="tozeroy",fillcolor=hex_rgba(color,0.08)),row=1,col=1)
-    fig.add_trace(go.Scatter(x=sub["timestamp"],y=sub["rsi_14"],
-        mode="lines",line=dict(color=PURPLE,width=1.5)),row=2,col=1)
-    fig.add_hline(y=70,line_dash="dash",line_color=RED,  opacity=0.4,row=2,col=1)
-    fig.add_hline(y=30,line_dash="dash",line_color=GREEN,opacity=0.4,row=2,col=1)
-    fig.add_hline(y=50,line_dash="dot", line_color=MUTED,opacity=0.3,row=2,col=1)
-    fig = chart_base(fig, h=320)
-    fig.update_yaxes(tickformat="$,.0f",row=1,col=1)
-    fig.update_yaxes(range=[0,100],     row=2,col=1)
-    return fig
-
-def chart_macd(df, coin, days):
-    sub    = df[df["coin"]==coin].tail(days)
-    colors = [GREEN if v>=0 else RED for v in sub["macd_histogram"]]
-    fig    = go.Figure()
-    fig.add_trace(go.Bar(x=sub["timestamp"],y=sub["macd_histogram"],
-                         marker_color=colors))
-    fig.add_hline(y=0,line_color=MUTED,line_width=0.8,opacity=0.5)
-    return chart_base(fig, h=220)
-
-def chart_bb(df, coin, days, color):
-    sub   = df[df["coin"]==coin].tail(days)
-    ma14  = sub["price"].rolling(14).mean()
-    bstd  = sub["price"].rolling(14).std()
-    upper = ma14 + 2*bstd
-    lower = ma14 - 2*bstd
-    fig   = go.Figure()
-    fig.add_trace(go.Scatter(x=sub["timestamp"],y=upper,
-        mode="lines",line=dict(color=MUTED,width=1,dash="dot"),name="Upper"))
-    fig.add_trace(go.Scatter(x=sub["timestamp"],y=lower,
-        mode="lines",line=dict(color=MUTED,width=1,dash="dot"),
-        fill="tonexty",fillcolor=hex_rgba("94a3b8",0.05),name="Lower"))
-    fig.add_trace(go.Scatter(x=sub["timestamp"],y=sub["price"],
-        mode="lines",line=dict(color=color,width=2),name="Price"))
-    fig.add_trace(go.Scatter(x=sub["timestamp"],y=ma14,
-        mode="lines",line=dict(color=AMBER,width=1.2,dash="dash"),name="MA14"))
-    fig = chart_base(fig, h=250)
-    fig.update_yaxes(tickformat="$,.0f")
-    return fig
-
-def chart_vol(df, coin, days):
-    sub = df[df["coin"]==coin].tail(days)
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=sub["timestamp"],y=sub["volatility_7d"]*100,
-        mode="lines",line=dict(color=BTC,width=1.8),
-        fill="tozeroy",fillcolor=hex_rgba(BTC,0.08),name="7d"))
-    fig.add_trace(go.Scatter(x=sub["timestamp"],y=sub["volatility_21d"]*100,
-        mode="lines",line=dict(color=ETH,width=1.2,dash="dash"),name="21d"))
-    fig = chart_base(fig, h=200)
-    fig.update_yaxes(ticksuffix="%")
-    return fig
-
-def chart_volume(df, coin, days, color):
-    sub = df[df["coin"]==coin].tail(days)
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=sub["timestamp"],y=sub["volume"],
-        marker_color=hex_rgba(color,0.6),
-        marker_line_color=color,marker_line_width=0.5))
-    fig = chart_base(fig, h=180)
-    fig.update_yaxes(tickformat=".2s")
-    return fig
-
-
-# ─────────────────────────────────────────────────────────────
-# SMART REFRESH
-# ─────────────────────────────────────────────────────────────
-def smart_refresh():
-    if os.path.exists(FEATURES_PATH):
-        age = (time.time() - os.path.getmtime(FEATURES_PATH)) / 3600
-        if age <= REFRESH_HOURS:
-            return
-    with st.spinner("🔄 Updating market data... (once per day)"):
-        try:
-            subprocess.run(["python", PIPELINE_PATH],
-                           capture_output=True, text=True, timeout=120)
-        except Exception as e:
-            st.warning(f"⚠️ Data update failed: {e} — using cached data")
-
-
-# ─────────────────────────────────────────────────────────────
-# CACHED LOADERS
+# LIVE DATA LOADER (yfinance — always up to date)
 # ─────────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_df():
+    rows = []
+    for coin, ticker in [("btc","BTC-USD"),("eth","ETH-USD")]:
+        raw = yf.download(ticker, period="1y", interval="1d", progress=False)
+        raw = raw.reset_index()
+        raw.columns = [c[0] if isinstance(c, tuple) else c for c in raw.columns]
+        p = raw["Close"].squeeze()
+
+        # RSI 14
+        delta = p.diff()
+        gain  = delta.clip(lower=0).rolling(14).mean()
+        loss  = (-delta.clip(upper=0)).rolling(14).mean()
+        rsi   = 100 - (100/(1 + gain/loss.replace(0, np.nan)))
+
+        # MACD
+        ema12     = p.ewm(span=12, adjust=False).mean()
+        ema26     = p.ewm(span=26, adjust=False).mean()
+        macd_l    = ema12 - ema26
+        macd_s    = macd_l.ewm(span=9, adjust=False).mean()
+        macd_h    = macd_l - macd_s
+
+        # Bollinger %B
+        ma20  = p.rolling(20).mean()
+        std20 = p.rolling(20).std()
+        bb    = (p - (ma20 - 2*std20)) / ((4*std20).replace(0, np.nan))
+
+        # Volatility
+        ret   = p.pct_change()
+        vol7  = ret.rolling(7).std()
+        vol21 = ret.rolling(21).std()
+
+        # MAs
+        ma7  = p.rolling(7).mean()
+        ma30 = p.rolling(30).mean()
+        ma50 = p.rolling(50).mean()
+
+        # Momentum acceleration
+        mom_acc = p.pct_change(5) - p.pct_change(10)
+
+        rows.append(pd.DataFrame({
+            "timestamp"            : raw["Date"],
+            "coin"                 : coin,
+            "price"                : p.values,
+            "volume"               : raw["Volume"].squeeze().values,
+            "rsi_14"               : rsi.values,
+            "macd"                 : macd_l.values,
+            "macd_signal"          : macd_s.values,
+            "macd_histogram"       : macd_h.values,
+            "bb_pct"               : bb.values,
+            "volatility_7d"        : vol7.values,
+            "volatility_21d"       : vol21.values,
+            "ma_7"                 : ma7.values,
+            "ma_30"                : ma30.values,
+            "ma_50"                : ma50.values,
+            "momentum_acceleration": mom_acc.values,
+            "bull_bear_flag"       : (p > ma50).astype(int).values,
+        }))
+    return pd.concat(rows, ignore_index=True)
+
+
+# Macro features still from CSV (fear_greed, vix, dxy, spy not in yfinance)
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_macro():
     return pd.read_csv(FEATURES_PATH, parse_dates=["timestamp"])
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -294,569 +471,671 @@ def get_pred(coin):  return predict(coin)
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_news(coin):  return fetch_news(coin)
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_articles(coin, q):
+    nd = get_news(coin)
+    return retrieve(q, nd["all_articles"], coin, top_n=5)
+
+
+# ─────────────────────────────────────────────────────────────
+# CHARTS
+# ─────────────────────────────────────────────────────────────
+def chart_price(df, coin, days, color):
+    sub = df[df["coin"]==coin].tail(days)
+    fig = go.Figure()
+    for col, c, dash, w in [
+        ("ma_50", MUTED,   "dot",   1.0),
+        ("ma_30", AMBER,   "dash",  1.1),
+        ("ma_7",  INDIGO,  "solid", 1.2),
+    ]:
+        if col in sub.columns:
+            fig.add_trace(go.Scatter(
+                x=sub["timestamp"], y=sub[col], mode="lines",
+                name=col.upper(), line=dict(color=c, width=w, dash=dash),
+                hovertemplate=f"{col}: $%{{y:,.0f}}<extra></extra>"
+            ))
+    fig.add_trace(go.Scatter(
+        x=sub["timestamp"], y=sub["price"], mode="lines",
+        name="Price", line=dict(color=color, width=2.2),
+        fill="tozeroy", fillcolor=hex_rgba(color, 0.07),
+        hovertemplate="Price: $%{y:,.2f}<extra></extra>"
+    ))
+    fig = chart_base(fig, h=320)
+    fig.update_yaxes(tickformat="$,.0f")
+    fig.update_layout(
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.01,
+                    xanchor="right", x=1, font=dict(size=9),
+                    bgcolor="rgba(0,0,0,0)")
+    )
+    return fig
+
+def chart_rsi(df, coin, days):
+    sub = df[df["coin"]==coin].tail(days)
+    fig = go.Figure()
+    fig.add_hrect(y0=70, y1=100, fillcolor=hex_rgba(RED,   0.06), line_width=0)
+    fig.add_hrect(y0=0,  y1=30,  fillcolor=hex_rgba(GREEN, 0.06), line_width=0)
+    fig.add_trace(go.Scatter(
+        x=sub["timestamp"], y=sub["rsi_14"], mode="lines",
+        line=dict(color=INDIGO, width=2),
+        hovertemplate="RSI: %{y:.1f}<extra></extra>"
+    ))
+    fig.add_hline(y=70, line_dash="dash", line_color=RED,   opacity=0.5)
+    fig.add_hline(y=30, line_dash="dash", line_color=GREEN, opacity=0.5)
+    fig.add_hline(y=50, line_dash="dot",  line_color=MUTED, opacity=0.3)
+    fig = chart_base(fig, h=220)
+    fig.update_yaxes(range=[0, 100])
+    fig.update_layout(
+        annotations=[
+            dict(x=1, y=75, xref="paper", yref="y", text="Overbought",
+                 font=dict(size=9, color=RED), showarrow=False, xanchor="right"),
+            dict(x=1, y=25, xref="paper", yref="y", text="Oversold",
+                 font=dict(size=9, color=GREEN), showarrow=False, xanchor="right"),
+        ]
+    )
+    return fig
+
+def chart_macd(df, coin, days):
+    sub    = df[df["coin"]==coin].tail(days)
+    colors = [GREEN if v >= 0 else RED for v in sub["macd_histogram"]]
+    fig    = go.Figure()
+    fig.add_trace(go.Bar(
+        x=sub["timestamp"], y=sub["macd_histogram"],
+        marker_color=colors,
+        hovertemplate="Hist: %{y:.4f}<extra></extra>"
+    ))
+    fig.add_trace(go.Scatter(
+        x=sub["timestamp"], y=sub["macd"],
+        mode="lines", line=dict(color=BTC, width=1.4),
+        name="MACD", hovertemplate="MACD: %{y:.4f}<extra></extra>"
+    ))
+    fig.add_trace(go.Scatter(
+        x=sub["timestamp"], y=sub["macd_signal"],
+        mode="lines", line=dict(color=ETH, width=1.4, dash="dash"),
+        name="Signal", hovertemplate="Signal: %{y:.4f}<extra></extra>"
+    ))
+    fig.add_hline(y=0, line_color=MUTED, line_width=0.8, opacity=0.5)
+    fig = chart_base(fig, h=240)
+    fig.update_layout(
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.01,
+                    xanchor="right", x=1, font=dict(size=9),
+                    bgcolor="rgba(0,0,0,0)")
+    )
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────
+# TOP SIGNALS BUILDER
+# ─────────────────────────────────────────────────────────────
+def build_signals(feat_live, feat_macro, articles):
+    signals = []
+    rsi  = float(feat_live["rsi_14"])
+    macd = float(feat_live["macd_histogram"])
+    mom  = float(feat_live["momentum_acceleration"])
+    bull = int(feat_live["bull_bear_flag"]) == 1
+
+    try:
+        vix = float(feat_macro["vix"])
+        dxy = float(feat_macro["dxy_return_ma7"])
+        fg  = float(feat_macro["fear_greed"])
+    except Exception:
+        vix, dxy, fg = 20.0, 0.0, 50.0
+
+    if rsi <= 35:
+        signals.append(("RSI rising from oversold zone", "bull"))
+    elif rsi >= 65:
+        signals.append(("RSI approaching overbought territory", "bear"))
+    else:
+        signals.append((f"RSI neutral at {rsi:.0f}", "neut"))
+
+    if macd > 0:
+        signals.append(("MACD histogram turning positive", "bull"))
+    else:
+        signals.append(("MACD histogram in negative territory", "bear"))
+
+    if mom > 0.01:
+        signals.append(("Short-term momentum accelerating upward", "bull"))
+    elif mom < -0.01:
+        signals.append(("Short-term momentum decelerating", "bear"))
+
+    if vix < 18:
+        signals.append(("Low VIX — risk-on environment", "bull"))
+    elif vix > 28:
+        signals.append(("High VIX — elevated market fear", "bear"))
+
+    if dxy < -0.001:
+        signals.append(("Dollar weakening — bullish tailwind for crypto", "bull"))
+    elif dxy > 0.001:
+        signals.append(("Dollar strengthening — headwind for crypto", "bear"))
+
+    if fg <= 25:
+        signals.append(("Extreme Fear — potential contrarian opportunity", "neut"))
+    elif fg >= 70:
+        signals.append(("Extreme Greed — caution advised", "bear"))
+
+    if bull:
+        signals.append(("Price above MA50 — bullish market regime", "bull"))
+    else:
+        signals.append(("Price below MA50 — bearish market regime", "bear"))
+
+    if articles:
+        bull_n = sum(1 for a in articles if news_sentiment(a.get("content",""))[0]=="Bullish")
+        bear_n = len(articles) - bull_n
+        if bull_n > bear_n:
+            signals.append((f"Positive news flow ({bull_n} bullish headlines)", "bull"))
+        elif bear_n > bull_n:
+            signals.append((f"Negative news flow ({bear_n} bearish headlines)", "bear"))
+
+    return signals[:6]
+
+
+# ─────────────────────────────────────────────────────────────
+# SMART REFRESH
+# ─────────────────────────────────────────────────────────────
+def smart_refresh():
+    if os.path.exists(FEATURES_PATH):
+        if (time.time() - os.path.getmtime(FEATURES_PATH))/3600 <= REFRESH_HOURS:
+            return
+    with st.spinner("🔄 Updating market data..."):
+        try:
+            subprocess.run(["python", PIPELINE_PATH],
+                           capture_output=True, text=True, timeout=120)
+        except Exception as e:
+            st.warning(f"⚠️ Data update failed: {e}")
+
 
 # ─────────────────────────────────────────────────────────────
 # SESSION STATE
 # ─────────────────────────────────────────────────────────────
-for k,v in [("page","home"),
-            ("chat_history",[]),("preds",{}),("news",{})]:
+defaults = {
+    "coin"        : "btc",
+    "chat_history": [],
+    "preds"       : {},
+    "news_cache"  : {},
+    "chat_open"   : False,
+    "pending_msg" : "",
+}
+for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+# Fix 1 — callback clears input field atomically before rerun
+def on_submit():
+    msg = st.session_state.get("chat_field", "").strip()
+    if msg:
+        st.session_state["pending_msg"] = msg
+        st.session_state["chat_field"]  = ""
 
 
 # ─────────────────────────────────────────────────────────────
 # BOOT
 # ─────────────────────────────────────────────────────────────
 smart_refresh()
-df = load_df()
+df_live  = load_df()
+df_macro = load_macro()
 
 with st.spinner("⚙️ Loading AI predictions..."):
-    for coin in ["btc","eth"]:
-        if coin not in st.session_state.preds:
-            st.session_state.preds[coin] = get_pred(coin)
-        if coin not in st.session_state.news:
-            st.session_state.news[coin]  = get_news(coin)
+    for c in ["btc", "eth"]:
+        if c not in st.session_state.preds:
+            st.session_state.preds[c] = get_pred(c)
+        if c not in st.session_state.news_cache:
+            st.session_state.news_cache[c] = get_news(c)
 
-btc_pred = st.session_state.preds["btc"]
-eth_pred = st.session_state.preds["eth"]
-btc_feat = df[df["coin"]=="btc"].iloc[-1]
-eth_feat = df[df["coin"]=="eth"].iloc[-1]
+coin     = st.session_state.coin
+pred     = st.session_state.preds[coin]
+color    = BTC if coin == "btc" else ETH
+name     = "Bitcoin" if coin == "btc" else "Ethereum"
+is_up    = pred["direction"].startswith("UP")
+dir_col  = GREEN if is_up else RED
+glow_cls = "hero-glow-up" if is_up else "hero-glow-down"
+
+# Latest row from each source
+feat_live  = df_live[df_live["coin"]==coin].dropna(subset=["rsi_14"]).iloc[-1]
+feat_macro = df_macro[df_macro["coin"]==coin].iloc[-1]
+
+articles = get_articles(coin, f"What will {name} do tomorrow?")
+signals  = build_signals(feat_live, feat_macro, articles)
 
 last_upd = datetime.fromtimestamp(
     os.path.getmtime(FEATURES_PATH)
-).strftime("%b %d, %Y %H:%M")
+).strftime("%b %d %H:%M")
 
 
 # ─────────────────────────────────────────────────────────────
 # NAVBAR
 # ─────────────────────────────────────────────────────────────
-def navbar():
-    c1, c2, c3 = st.columns([3,4,3])
-    with c1:
-        st.markdown(f"""
-        <div style="padding-top:4px;">
-            <span style="font-size:1.6rem;font-weight:800;
-                background:linear-gradient(90deg,{BTC},{ETH});
-                -webkit-background-clip:text;-webkit-text-fill-color:transparent;">
-                CoinTrend
-            </span>
-            <div style="font-size:0.68rem;color:{MUTED};
-                letter-spacing:1.5px;margin-top:2px;">
-                ONE STEP AHEAD OF THE MARKET
-            </div>
-        </div>""", unsafe_allow_html=True)
-    
-    with c2:
-        n1,n2,n3 = st.columns(3)
-        pages = [("🏠 Home","home"),("₿ Bitcoin","btc"),("Ξ Ethereum","eth")]
-        for col,(lbl,pg) in zip([n1,n2,n3], pages):
-            with col:
-                t = "primary" if st.session_state.page==pg else "secondary"
-                if st.button(lbl, key=f"nav_{pg}", type=t,
-                             use_container_width=True):
-                    st.session_state.page = pg
-                    st.rerun()
-    with c3:
-        st.markdown(f"""
-        <div style="text-align:right;padding-top:6px;">
-            <div style="font-size:0.75rem;color:{MUTED};">
-                📅 {datetime.now().strftime("%b %d, %Y")}
-            </div>
-            <div style="font-size:0.68rem;color:{MUTED};margin-top:2px;">
-                Updated: {last_upd}
-            </div>
-        </div>""", unsafe_allow_html=True)
-    st.markdown(f"<hr style='margin:8px 0 20px 0;'>", unsafe_allow_html=True)
+n1, n2, n3 = st.columns([3, 3, 4])
+with n1:
+    st.markdown(LOGO_SVG, unsafe_allow_html=True)
+with n2:
+    ca, cb = st.columns(2)
+    with ca:
+        if st.button("₿  Bitcoin", key="nav_btc",
+                     type="primary" if coin=="btc" else "secondary",
+                     use_container_width=True):
+            st.session_state.coin = "btc"
+            st.rerun()
+    with cb:
+        if st.button("Ξ  Ethereum", key="nav_eth",
+                     type="primary" if coin=="eth" else "secondary",
+                     use_container_width=True):
+            st.session_state.coin = "eth"
+            st.rerun()
+with n3:
+    price_now = float(feat_live["price"])
+    st.markdown(
+        f'<div style="text-align:right;padding-top:10px;">'
+        f'<span style="font-size:0.75rem;color:{MUTED};">'
+        f'📅 {datetime.now().strftime("%b %d, %Y")}'
+        f'&nbsp;|&nbsp; Updated: {last_upd}'
+        f'&nbsp;|&nbsp; Price: '
+        f'<strong style="color:{color};">${price_now:,.2f}</strong>'
+        f'</span></div>',
+        unsafe_allow_html=True
+    )
+
+st.markdown("<hr>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────
-# HOME PAGE
+# 🎯 HERO — AI VERDICT  (Fix 4: side-by-side layout)
 # ─────────────────────────────────────────────────────────────
-def page_home():
-    st.markdown('<div class="section-title">🌍 Global Market Indicators</div>',
-                unsafe_allow_html=True)
+st.markdown('<div class="section-title">🎯 AI Verdict</div>',
+            unsafe_allow_html=True)
 
-    fg  = float(btc_feat["fear_greed"])
-    vix = float(btc_feat["vix"])
-    dxy = float(btc_feat["dxy_return_ma7"])
-    spy = float(btc_feat["spy_return_ma7"])
-    bull  = btc_feat["bull_bear_flag"] == 1
-    volhi = btc_feat["volatility_regime"] == 1
+# Pre-build tooltip strings BEFORE f-strings (Fix 2)
+tt_conviction = tt("AI Conviction",
+    "How strongly the model's signals align. "
+    "Above 70% = strong. 55-70% = moderate. Below 55% = uncertain.")
+tt_fg = tt("Fear &amp; Greed Index",
+    "Market sentiment score 0-100. "
+    "Extreme Fear can signal buying opportunities. "
+    "Extreme Greed may indicate a market top.")
+tt_vix = tt("VIX — Market Fear",
+    "Expected stock market volatility. "
+    "Above 25 = high fear / risk-off environment. "
+    "Below 15 = calm / risk-on. High VIX pressures crypto.")
+tt_dxy = tt("DXY — Dollar Trend",
+    "US Dollar strength vs major currencies. "
+    "Rising DXY = bearish for crypto (investors move to safety). "
+    "Falling DXY = bullish for crypto.")
 
-    _,fgc = fear_greed_label(fg)
-    g1,g2,g3,g4,g5,g6 = st.columns(6)
+cc   = conf_color(pred["confidence"])
+conf = pred["confidence"]
+direction_text = pred["direction"]
 
-    with g1:
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-label">Fear & Greed</div>
-            <div class="card-value" style="color:{fgc};">{int(fg)}</div>
-            {fg_bar(fg)}
-        </div>""", unsafe_allow_html=True)
+h_left, h_right = st.columns([1, 1])
 
-    with g2:
-        bc = GREEN if bull else RED
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-label">Market Trend</div>
-            <div class="card-value" style="color:{bc};">
-                {"Bull 🐂" if bull else "Bear 🐻"}
-            </div>
-            <div class="card-sub">BTC vs MA50</div>
-        </div>""", unsafe_allow_html=True)
+with h_left:
+    st.markdown(
+        f'<div class="hero-card {glow_cls}">'
+        f'<div style="font-size:0.72rem;color:{MUTED};text-transform:uppercase;'
+        f'letter-spacing:0.12em;margin-bottom:14px;">'
+        f'{name} — Tomorrow\'s Direction</div>'
+        f'<div style="display:flex;align-items:center;'
+        f'justify-content:space-between;gap:16px;">'
+        f'<div style="font-size:3rem;font-weight:900;color:{dir_col};'
+        f'line-height:1;flex-shrink:0;">{direction_text}</div>'
+        f'<div style="flex:1;min-width:0;">'
+        f'<div style="margin-bottom:4px;">{tt_conviction}</div>'
+        f'<div style="font-size:1.8rem;font-weight:800;color:{cc};">{conf}%</div>'
+        f'<div style="background:{NAVY3};border-radius:6px;height:8px;margin-top:8px;">'
+        f'<div style="background:linear-gradient(90deg,{NAVY3},{cc});'
+        f'width:{conf}%;height:8px;border-radius:6px;"></div>'
+        f'</div></div></div>'
+        f'<div style="font-size:0.70rem;color:{MUTED};margin-top:16px;font-style:italic;">'
+        f'⚠️ Not financial advice — for decision support only</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
-    with g3:
-        vc = RED if vix>25 else GREEN
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-label">VIX</div>
-            <div class="card-value" style="color:{vc};">{vix:.1f}</div>
-            <div class="card-sub">{"High Fear ⚠️" if vix>25 else "Low Fear ✅"}</div>
-        </div>""", unsafe_allow_html=True)
+with h_right:
+    try:
+        fg  = float(feat_macro["fear_greed"])
+        vix = float(feat_macro["vix"])
+        dxy = float(feat_macro["dxy_return_ma7"])
+    except Exception:
+        fg, vix, dxy = 50.0, 20.0, 0.0
 
-    with g4:
-        dc = RED if dxy>0 else GREEN
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-label">DXY Trend (7d)</div>
-            <div class="card-value" style="color:{dc};">
-                {"↑ Strong" if dxy>0 else "↓ Weak"}
-            </div>
-            <div class="card-sub">
-                {"Bearish for crypto" if dxy>0 else "Bullish for crypto"}
-            </div>
-        </div>""", unsafe_allow_html=True)
+    vs, vc_ = vix_state(vix)[:2]
+    ds, dc_ = dxy_state(dxy)[:2]
+    dxy_dir = "↑ Strong" if dxy > 0 else "↓ Weak"
 
-    with g5:
-        sc = GREEN if spy>0 else RED
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-label">SPY Trend (7d)</div>
-            <div class="card-value" style="color:{sc};">
-                {"↑ Risk-On" if spy>0 else "↓ Risk-Off"}
-            </div>
-            <div class="card-sub">
-                {"Bullish for crypto" if spy>0 else "Bearish for crypto"}
-            </div>
-        </div>""", unsafe_allow_html=True)
+    fg_html  = fg_bar(fg)
 
-    with g6:
-        vlc = RED if volhi else GREEN
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-label">Volatility Regime</div>
-            <div class="card-value" style="color:{vlc};">
-                {"High ⚡" if volhi else "Low 😴"}
-            </div>
-            <div class="card-sub">
-                {"Expect large moves" if volhi else "Calm market"}
-            </div>
-        </div>""", unsafe_allow_html=True)
-
-    # ── Assets table
-    st.markdown('<div class="section-title">💎 Assets</div>',
-                unsafe_allow_html=True)
-
-    hcols = st.columns([2,2,2,2,2,2,1])
-    for hc, lbl in zip(hcols,
-        ["Asset","Price","Tomorrow's Direction",
-         "Confidence","Volatility 7d","RSI",""]):
-        with hc:
-            st.markdown(f"""
-            <div style="font-size:0.70rem;color:{MUTED};text-transform:uppercase;
-                        letter-spacing:0.08em;padding:4px 0 8px 0;
-                        border-bottom:1px solid {BORDER};">
-                {lbl}
-            </div>""", unsafe_allow_html=True)
-
-    for coin, pred, feat, color, name, sym in [
-        ("btc", btc_pred, btc_feat, BTC, "Bitcoin",  "₿"),
-        ("eth", eth_pred, eth_feat, ETH, "Ethereum", "Ξ"),
-    ]:
-        is_up  = pred["direction"].startswith("UP")
-        dc     = GREEN if is_up else RED
-        cc     = conf_color(pred["confidence"])
-        rsi    = float(feat["rsi_14"])
-        ri,rc  = rsi_label(rsi)
-        vol    = float(feat["volatility_7d"])*100
-        price  = float(feat["price"])
-        vc     = RED if vol>3 else GREEN
-
-        r1,r2,r3,r4,r5,r6,r7 = st.columns([2,2,2,2,2,2,1])
-        with r1:
-            st.markdown(f"""
-            <div style="display:flex;align-items:center;gap:10px;padding:12px 0;">
-                <div style="width:36px;height:36px;border-radius:50%;
-                    background:{color}22;display:flex;align-items:center;
-                    justify-content:center;font-size:1.1rem;color:{color};">
-                    {sym}
-                </div>
-                <div>
-                    <div style="font-weight:700;">{name}</div>
-                    <div style="color:{MUTED};font-size:0.75rem;">{coin.upper()}</div>
-                </div>
-            </div>""", unsafe_allow_html=True)
-        with r2:
-            st.markdown(f"""
-            <div style="padding:12px 0;font-weight:700;font-size:1rem;">
-                ${price:,.2f}
-            </div>""", unsafe_allow_html=True)
-        with r3:
-            st.markdown(f"""
-            <div style="padding:12px 0;color:{dc};font-weight:700;font-size:1rem;">
-                {pred['direction']}
-            </div>""", unsafe_allow_html=True)
-        with r4:
-            st.markdown(f"""
-            <div style="padding:12px 0;">
-                <div style="color:{cc};font-weight:700;">{pred['confidence']}%</div>
-                <div style="background:{NAVY3};border-radius:3px;
-                    height:4px;margin-top:4px;">
-                    <div style="background:{cc};width:{pred['confidence']}%;
-                        height:4px;border-radius:3px;"></div>
-                </div>
-            </div>""", unsafe_allow_html=True)
-        with r5:
-            st.markdown(f"""
-            <div style="padding:12px 0;color:{vc};font-weight:600;">
-                {vol:.2f}%
-            </div>""", unsafe_allow_html=True)
-        with r6:
-            st.markdown(f"""
-            <div style="padding:12px 0;">
-                <span style="color:{rc};font-weight:600;">{rsi:.1f}</span>
-                <span style="color:{MUTED};font-size:0.75rem;
-                    margin-left:6px;">{ri}</span>
-            </div>""", unsafe_allow_html=True)
-        with r7:
-            if st.button("View →", key=f"view_{coin}",
-                         use_container_width=True):
-                st.session_state.page = coin
-                st.rerun()
-        st.markdown(f"<hr style='margin:0;'>", unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="card" style="margin-bottom:10px;">'
+        f'<div class="card-label">{tt_fg}</div>'
+        f'{fg_html}</div>',
+        unsafe_allow_html=True
+    )
+    mc1, mc2 = st.columns(2)
+    with mc1:
+        st.markdown(
+            f'<div class="card"><div class="card-label">{tt_vix}</div>'
+            f'<div class="card-value" style="color:{vc_};">{vix:.1f}</div>'
+            f'<div class="card-sub" style="color:{vc_};">{vs}</div></div>',
+            unsafe_allow_html=True
+        )
+    with mc2:
+        st.markdown(
+            f'<div class="card"><div class="card-label">{tt_dxy}</div>'
+            f'<div class="card-value" style="color:{dc_};">{dxy_dir}</div>'
+            f'<div class="card-sub" style="color:{dc_};">{ds}</div></div>',
+            unsafe_allow_html=True
+        )
 
 
 # ─────────────────────────────────────────────────────────────
-# COIN DETAIL PAGE
+# 🔑 TOP SIGNALS
 # ─────────────────────────────────────────────────────────────
-def page_coin(coin):
-    pred  = st.session_state.preds[coin]
-    feat  = df[df["coin"]==coin].iloc[-1]
-    color = BTC if coin=="btc" else ETH
-    name  = "Bitcoin" if coin=="btc" else "Ethereum"
+st.markdown('<div class="section-title">🔑 Top Signals Driving This Prediction</div>',
+            unsafe_allow_html=True)
 
-    is_up = pred["direction"].startswith("UP")
-    dc    = GREEN if is_up else RED
-    cc    = conf_color(pred["confidence"])
+pills = ""
+for text, direction in signals:
+    cls  = {"bull":"pill-bull","bear":"pill-bear","neut":"pill-neut"}[direction]
+    icon = {"bull":"▲","bear":"▼","neut":"→"}[direction]
+    pills += f'<span class="signal-pill {cls}">{icon} {text}</span>'
 
-    left, right = st.columns([2,3])
+st.markdown(f'<div style="padding:4px 0 12px 0;">{pills}</div>',
+            unsafe_allow_html=True)
 
-    with left:
-        st.markdown(f"""
-        <div class="pred-card">
-            <div style="color:{MUTED};font-size:0.75rem;
-                text-transform:uppercase;letter-spacing:0.1em;">
-                {name} — Tomorrow's Direction
-            </div>
-            <div style="font-size:3.2rem;font-weight:800;
-                color:{dc};margin:10px 0;">
-                {pred['direction']}
-            </div>
-            <div style="font-size:1.1rem;color:{cc};font-weight:700;
-                margin-bottom:14px;">
-                {pred['confidence']}% confidence
-            </div>
-            <div style="background:{NAVY3};border-radius:6px;
-                height:8px;margin:8px 0;">
-                <div style="background:{cc};width:{pred['confidence']}%;
-                    height:8px;border-radius:6px;"></div>
-            </div>
-            <div style="font-size:0.73rem;color:{MUTED};margin-top:14px;">
-                Based on technical, macro &amp; sentiment signals
-            </div>
-            <div style="font-size:0.70rem;color:{MUTED};
-                margin-top:4px;font-style:italic;">
-                ⚠️ Not financial advice
-            </div>
-        </div>""", unsafe_allow_html=True)
-
-    with right:
-        st.markdown('<div class="section-title">📊 Indicators</div>',
-                    unsafe_allow_html=True)
-
-        rsi  = float(feat["rsi_14"])
-        macd = float(feat["macd_histogram"])
-        bb   = float(feat["bb_pct"])
-        mom  = float(feat["momentum_acceleration"])
-
-        ri,rc  = rsi_label(rsi)
-        mi,mc  = macd_label(macd)
-        bi,bbc = bb_label(bb)
-        mo,moc = mom_label(mom)
-
-        ia,ib = st.columns(2)
-        ic,id_ = st.columns(2)
-
-        for col, lbl, val, interp, icol in [
-            (ia, "RSI 14",       f"{rsi:.1f}",  ri, rc),
-            (ib, "MACD Signal",  f"{macd:.2f}", mi, mc),
-        ]:
-            with col:
-                st.markdown(f"""
-                <div class="card">
-                    <div class="card-label">{lbl}</div>
-                    <div class="card-value" style="color:{icol};">{val}</div>
-                    <div class="card-sub" style="color:{icol};">{interp}</div>
-                </div>""", unsafe_allow_html=True)
-
-        for col, lbl, val, interp, icol in [
-            (ic,  "BB Position", f"{bb:.2f}",   bi, bbc),
-            (id_, "Momentum",    f"{mom:.4f}",  mo, moc),
-        ]:
-            with col:
-                st.markdown(f"""
-                <div class="card">
-                    <div class="card-label">{lbl}</div>
-                    <div class="card-value" style="color:{icol};">{val}</div>
-                    <div class="card-sub" style="color:{icol};">{interp}</div>
-                </div>""", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ── Price + RSI
-    st.markdown('<div class="section-title">📈 Price & RSI 14</div>',
-                unsafe_allow_html=True)
-    d1 = period_sel(f"pr_{coin}")
-    st.plotly_chart(chart_price_rsi(df, coin, d1, color),
-                    use_container_width=True,
-                    config={"displayModeBar":False},
-                    key=f"cpr_{coin}")
-
-    cl, cr = st.columns(2)
-    with cl:
-        st.markdown('<div class="section-title">📊 MACD Histogram</div>',
-                    unsafe_allow_html=True)
-        d2 = period_sel(f"macd_{coin}")
-        st.plotly_chart(chart_macd(df, coin, d2),
-                        use_container_width=True,
-                        config={"displayModeBar":False},
-                        key=f"cmacd_{coin}")
-    with cr:
-        st.markdown('<div class="section-title">📉 Bollinger Bands</div>',
-                    unsafe_allow_html=True)
-        d3 = period_sel(f"bb_{coin}")
-        st.plotly_chart(chart_bb(df, coin, d3, color),
-                        use_container_width=True,
-                        config={"displayModeBar":False},
-                        key=f"cbb_{coin}")
-
-    cl2, cr2 = st.columns(2)
-    with cl2:
-        st.markdown('<div class="section-title">⚡ Volatility</div>',
-                    unsafe_allow_html=True)
-        d4 = period_sel(f"vol_{coin}")
-        st.plotly_chart(chart_vol(df, coin, d4),
-                        use_container_width=True,
-                        config={"displayModeBar":False},
-                        key=f"cvol_{coin}")
-    with cr2:
-        st.markdown('<div class="section-title">📦 Volume</div>',
-                    unsafe_allow_html=True)
-        d5 = period_sel(f"volume_{coin}")
-        st.plotly_chart(chart_volume(df, coin, d5, color),
-                        use_container_width=True,
-                        config={"displayModeBar":False},
-                        key=f"cvolume_{coin}")
 
 # ─────────────────────────────────────────────────────────────
-# FLOATING CHAT 
+# 📊 SIGNAL MATRIX
 # ─────────────────────────────────────────────────────────────
+st.markdown('<div class="section-title">📊 Signal Matrix</div>',
+            unsafe_allow_html=True)
 
-QUICK = [
-    ("₿ BTC tomorrow?",      "What will Bitcoin do tomorrow?",          "btc"),
-    ("Ξ ETH tomorrow?",      "What will Ethereum do tomorrow?",         "eth"),
-    ("⚠️ BTC risks today?",  "What are the main risks for BTC today?",  "btc"),
-    ("🌍 Market overview?",  "Give me a full crypto market overview",   "btc"),
+rsi_v  = float(feat_live["rsi_14"])
+macd_v = float(feat_live["macd_histogram"])
+bb_v   = float(feat_live["bb_pct"])
+mom_v  = float(feat_live["momentum_acceleration"])
+vol7_v = float(feat_live["volatility_7d"]) * 100
+bull_v = int(feat_live["bull_bear_flag"]) == 1
+
+ri, rc, _ = rsi_state(rsi_v)
+mi, mc_,_ = macd_state(macd_v)
+bi, bc, _ = bb_state(bb_v)
+mo, moc,_ = mom_state(mom_v)
+
+# Pre-build ALL tooltip strings before matrix HTML
+tt_rsi  = tt("RSI 14",
+    "Relative Strength Index on a 0-100 scale. "
+    "Above 70: overbought, price may reverse down. "
+    "Below 30: oversold, price may bounce up. 50 = neutral.")
+tt_macd = tt("MACD Histogram",
+    "MACD line minus Signal line. "
+    "Positive and growing: bullish momentum accelerating. "
+    "Negative and falling: bearish momentum strengthening.")
+tt_bb   = tt("Bollinger Position",
+    "Where price sits between the Bollinger Bands. "
+    "0 = lower band (oversold). 1 = upper band (overbought). "
+    "0.5 = middle of the band.")
+tt_mom  = tt("Momentum",
+    "5-day momentum minus 10-day momentum. "
+    "Positive: short-term price accelerating vs medium-term. "
+    "Negative: momentum slowing or reversing.")
+tt_vol  = tt("Volatility 7d",
+    "7-day rolling volatility of daily returns. "
+    "High = larger price swings, higher risk. "
+    "Low = calmer market, smaller moves expected.")
+tt_reg  = tt("Market Regime",
+    "Bull Regime: price above MA50 — uptrend context. "
+    "Bear Regime: price below MA50 — downtrend context.")
+
+sc1, sc2, sc3 = st.columns(3)
+sc4, sc5, sc6 = st.columns(3)
+
+vol_c = RED if vol7_v > 3 else GREEN
+reg_c = GREEN if bull_v else RED
+
+matrix = [
+    (sc1, tt_rsi,  f"{rsi_v:.1f}",   ri,  rc,  rsi_v),
+    (sc2, tt_macd, f"{macd_v:.4f}",  mi,  mc_, 50 + (50 if macd_v>0 else -50)),
+    (sc3, tt_bb,   f"{bb_v:.2f}",    bi,  bc,  bb_v*100),
+    (sc4, tt_mom,  f"{mom_v:.4f}",   mo,  moc, 50 + mom_v*1000),
+    (sc5, tt_vol,  f"{vol7_v:.2f}%", "High" if vol7_v>3 else "Low",
+                                      vol_c, min(vol7_v*10, 100)),
+    (sc6, tt_reg,  "Bull 🐂" if bull_v else "Bear 🐻",
+                    "Above MA50" if bull_v else "Below MA50",
+                    reg_c, 100 if bull_v else 0),
 ]
 
-def floating_chat():
-
-    # ── Initialize session state safely
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
-
-    if "chat_input" not in st.session_state:
-        st.session_state.chat_input = ""
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ── Centered layout
-    _, center, _ = st.columns([1, 4, 1])
-
-    with center:
-
-        # ── Header
-        st.markdown(f"""
-        <div style="text-align:center;margin-bottom:20px;">
-            <div style="display:inline-flex;flex-direction:column;
-                align-items:center;gap:8px;background:{NAVY2};
-                border:1px solid {BTC}44;border-radius:20px;
-                padding:16px 32px;">
-                <div style="width:40px;height:40px;border-radius:12px;
-                    background:linear-gradient(135deg,{BTC},{ETH});
-                    display:flex;align-items:center;justify-content:center;
-                    font-size:1.2rem;">✦</div>
-                <div style="font-size:1.0rem;font-weight:700;color:{TEXT};">
-                    CoinTrend AI Analyst
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # ─────────────────────────────────────────
-        # CHAT HISTORY
-        # ─────────────────────────────────────────
-        if st.session_state.chat_history:
-            for msg in st.session_state.chat_history[-8:]:
-
-                if msg["role"] == "user":
-                    st.markdown(f"""
-                    <div style="background:#1d4ed8;
-                        border-radius:18px 18px 4px 18px;
-                        padding:10px 16px;margin:8px 0;
-                        max-width:75%;margin-left:auto;
-                        font-size:0.85rem;">
-                        {msg['content']}
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                else:
-                    st.markdown(f"""
-                    <div style="background:{NAVY2};
-                        border:1px solid {BORDER};
-                        border-radius:18px 18px 18px 4px;
-                        padding:12px 16px;margin:8px 0;
-                        font-size:0.85rem;line-height:1.6;">
-                        {msg['content']}
-                    </div>
-                    """, unsafe_allow_html=True)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-
-        # ─────────────────────────────────────────
-        # INPUT (ENTER SEND ENABLED)
-        # ─────────────────────────────────────────
-        st.markdown("""
-        <style>
-        input[type="text"] {
-            caret-color: light blue !important;  
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        user_input = st.text_input(
-            "Ask...",
-            placeholder="Ask me anything about BTC, ETH or market conditions...",
-            key="chat_input",
-            label_visibility="collapsed"
+for col, label_html, value_str, interp, icol, gauge_pct in matrix:
+    with col:
+        bar = gauge_bar(gauge_pct, icol)
+        st.markdown(
+            f'<div class="sig-card">'
+            f'<div class="sig-label">{label_html}</div>'
+            f'<div class="sig-value" style="color:{icol};">{value_str}</div>'
+            f'{bar}'
+            f'<div class="sig-interp" style="color:{icol};">{interp}</div>'
+            f'</div>',
+            unsafe_allow_html=True
         )
-
-        # ENTER triggers automatically because text_input updates state
-        send = bool(user_input)
-
-        # ─────────────────────────────────────────
-        # QUICK QUESTIONS
-        # ─────────────────────────────────────────
-
-        st.markdown(f"""
-        <div style="margin-top:10px;font-size:0.68rem;color:{MUTED};
-            text-transform:uppercase;letter-spacing:0.08em;
-            margin-bottom:6px;text-align:center;">
-            Quick Questions
-        </div>
-        """, unsafe_allow_html=True)
-
-        qcols = st.columns(4)
-
-        for i, (lbl, q, coin) in enumerate(QUICK):
-            with qcols[i]:
-                if st.button(lbl, key=f"q_{i}", use_container_width=True):
-
-                    st.session_state.chat_history.append(
-                        {"role": "user", "content": q, "coin": coin}
-                    )
-
-                    with st.spinner("Analyzing..."):
-                        nd   = st.session_state.news.get(coin, get_news(coin))
-                        pd_  = st.session_state.preds.get(coin, get_pred(coin))
-                        arts = retrieve(q, nd["all_articles"], coin)
-                        ctx  = format_context(arts, coin, pd_)
-                        resp = analyze(q, ctx)
-
-                    st.session_state.chat_history.append(
-                        {"role": "assistant", "content": resp}
-                    )
-
-                    st.rerun()
-
-        # ─────────────────────────────────────────
-        # CLEAR CHAT
-        # ─────────────────────────────────────────
-
-        if st.session_state.chat_history:
-            _, clr, _ = st.columns([4, 2, 4])
-            with clr:
-                if st.button("🗑️ Clear", key="clear_chat", use_container_width=True):
-                    st.session_state.chat_history = []
-                    st.rerun()
-
-    # ─────────────────────────────────────────
-    # HANDLE SEND (SAFE STATE CLEAR)
-    # ─────────────────────────────────────────
-
-    if send:
-
-        coin = "eth" if any(
-            w in user_input.lower()
-            for w in ["eth", "ethereum", "ether"]
-        ) else "btc"
-
-        st.session_state.chat_history.append(
-            {"role": "user", "content": user_input, "coin": coin}
-        )
-
-        with st.spinner("Analyzing..."):
-            nd   = st.session_state.news.get(coin, get_news(coin))
-            pd_  = st.session_state.preds.get(coin, get_pred(coin))
-            arts = retrieve(user_input, nd["all_articles"], coin)
-            ctx  = format_context(arts, coin, pd_)
-            resp = analyze(user_input, ctx)
-
-        st.session_state.chat_history.append(
-            {"role": "assistant", "content": resp}
-        )
-
-        # SAFE CLEAR (NO STREAMLIT ERROR)
-        del st.session_state["chat_input"]
-
-        st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────
-# RENDER
+# 📈 DEEP TECHNICAL VIEW
 # ─────────────────────────────────────────────────────────────
-navbar()
+st.markdown('<div class="section-title">📈 Deep Technical View</div>',
+            unsafe_allow_html=True)
 
-if   st.session_state.page == "home": page_home()
-elif st.session_state.page == "btc":  page_coin("btc")
-elif st.session_state.page == "eth":  page_coin("eth")
+t1, t2 = st.columns([5, 1])
+with t1:
+    st.markdown(
+        f'<span style="font-weight:600;">Price &amp; Moving Averages</span> '
+        f'<span style="font-size:0.72rem;color:{MUTED};">'
+        f'MA7 <span style="color:{INDIGO};">━</span> &nbsp;'
+        f'MA30 <span style="color:{AMBER};">╌</span> &nbsp;'
+        f'MA50 <span style="color:{MUTED};">···</span></span>',
+        unsafe_allow_html=True
+    )
+with t2:
+    d1 = period_dd("price", "90D")
+st.plotly_chart(chart_price(df_live, coin, d1, color),
+                use_container_width=True, config={"displayModeBar":False})
 
-floating_chat()
+rc1, rc2 = st.columns(2)
+with rc1:
+    r1, r2 = st.columns([4,1])
+    with r1:
+        st.markdown(
+            f'<span style="font-weight:600;">RSI 14</span> '
+            f'<span style="font-size:0.72rem;color:{MUTED};">'
+            f'Overbought &gt;70 · Oversold &lt;30</span>',
+            unsafe_allow_html=True
+        )
+    with r2:
+        d2 = period_dd("rsi", "90D")
+    st.plotly_chart(chart_rsi(df_live, coin, d2),
+                    use_container_width=True, config={"displayModeBar":False})
 
-st.markdown(f"""
-<div style="text-align:center;color:{MUTED};font-size:0.72rem;
-    margin-top:40px;padding:20px;border-top:1px solid {BORDER};">
-    ⚠️ CoinTrend is an AI-powered decision support tool.
-    This is <strong>not financial advice</strong>.
-    Always do your own research.<br><br>
-    CoinTrend © 2026 — One step ahead of the market
-</div>""", unsafe_allow_html=True)
+with rc2:
+    r3, r4 = st.columns([4,1])
+    with r3:
+        st.markdown(
+            f'<span style="font-weight:600;">MACD</span> '
+            f'<span style="font-size:0.72rem;color:{MUTED};">'
+            f'MACD <span style="color:{BTC};">━</span> &nbsp;'
+            f'Signal <span style="color:{ETH};">╌</span></span>',
+            unsafe_allow_html=True
+        )
+    with r4:
+        d3 = period_dd("macd", "90D")
+    st.plotly_chart(chart_macd(df_live, coin, d3),
+                    use_container_width=True, config={"displayModeBar":False})
+
+
+# ─────────────────────────────────────────────────────────────
+# 📰 NEWS IMPACT
+# ─────────────────────────────────────────────────────────────
+st.markdown('<div class="section-title">📰 News Impact</div>',
+            unsafe_allow_html=True)
+
+if articles:
+    na, nb = st.columns(2)
+    for i, art in enumerate(articles[:4]):
+        col   = na if i%2==0 else nb
+        tag, tcls = news_sentiment(art.get("content",""))
+        src   = art.get("url","")
+        dom   = src.replace("https://","").replace("http://","").split("/")[0]
+        date_ = art.get("published_date","")
+        ds    = f"· {date_}" if date_ else ""
+        title = art.get("title","")[:88]
+        snip  = art.get("content","")[:140]
+        with col:
+            st.markdown(
+                f'<div class="news-card">'
+                f'<div style="display:flex;justify-content:space-between;'
+                f'align-items:flex-start;margin-bottom:6px;">'
+                f'<div style="font-size:0.85rem;font-weight:600;">{title}...</div>'
+                f'<span class="{tcls}" style="margin-left:8px;white-space:nowrap;">'
+                f'{tag}</span></div>'
+                f'<div style="font-size:0.70rem;color:{MUTED};">{dom} {ds}</div>'
+                f'<div style="font-size:0.78rem;color:{MUTED};margin-top:6px;'
+                f'line-height:1.5;">{snip}...</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+else:
+    st.markdown(f'<p style="color:{MUTED};font-size:0.85rem;">No articles loaded.</p>',
+                unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────
+# 💬 FLOATING CHAT (Fix 2 — real Streamlit button styled as FAB)
+# ─────────────────────────────────────────────────────────────
+
+# FAB button — CSS makes it fixed bottom-right
+st.markdown('<div id="chat-fab-container">', unsafe_allow_html=True)
+fab_icon = "✕" if st.session_state.chat_open else "💬"
+if st.button(fab_icon, key="fab_btn"):
+    st.session_state.chat_open = not st.session_state.chat_open
+    st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Chat panel — rendered inline, positioned fixed via CSS when open
+if st.session_state.chat_open:
+
+    QUICK_QS = [
+        ("₿ BTC tomorrow?",    "What will Bitcoin do tomorrow?"),
+        ("Ξ ETH tomorrow?",    "What will Ethereum do tomorrow?"),
+        ("⚠️ Risks today?",     f"What are the main risks for {name} today?"),
+        ("🌍 Market overview?", "Give me a full crypto market overview"),
+        ("📉 Why falling?",     f"Why is {name} falling today?"),
+    ]
+
+    # Panel container
+    st.markdown(
+        f'<div style="position:fixed;bottom:100px;right:28px;z-index:9998;'
+        f'width:390px;background:{NAVY2};border:1px solid {BORDER};'
+        f'border-radius:20px;box-shadow:0 8px 48px rgba(0,0,0,0.55);'
+        f'overflow:hidden;">'
+        f'<div style="background:linear-gradient(135deg,{NAVY3},{NAVY2});'
+        f'padding:14px 18px;border-bottom:1px solid {BORDER};'
+        f'display:flex;align-items:center;gap:10px;">'
+        f'<div style="width:32px;height:32px;border-radius:10px;'
+        f'background:linear-gradient(135deg,{BTC},{ETH});'
+        f'display:flex;align-items:center;justify-content:center;font-size:1rem;">✦</div>'
+        f'<div><div style="font-weight:700;font-size:0.9rem;">CoinTrend AI Analyst</div>'
+        f'<div style="font-size:0.68rem;color:{GREEN};">● Online</div></div>'
+        f'</div>'
+        f'<div style="max-height:300px;overflow-y:auto;padding:12px 14px;">',
+        unsafe_allow_html=True
+    )
+
+    # Chat history
+    if st.session_state.chat_history:
+        for msg in st.session_state.chat_history[-8:]:
+            if msg["role"] == "user":
+                st.markdown(
+                    f'<div class="chat-msg-user">{msg["content"]}</div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f'<div class="chat-msg-bot">{msg["content"]}</div>',
+                    unsafe_allow_html=True
+                )
+    else:
+        st.markdown(
+            f'<div style="text-align:center;color:{MUTED};'
+            f'font-size:0.80rem;padding:20px 0;">'
+            f'Ask me anything about BTC, ETH or crypto markets.</div>',
+            unsafe_allow_html=True
+        )
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Fix 3 — Compact chips (visual only, buttons below are the real ones)
+    chips = "".join(f'<span class="chip">{lbl}</span>' for lbl, _ in QUICK_QS)
+    st.markdown(
+        f'<div style="padding:8px 14px;border-top:1px solid {BORDER};">'
+        f'<div style="font-size:0.62rem;color:{MUTED};text-transform:uppercase;'
+        f'letter-spacing:0.09em;margin-bottom:5px;">Quick Questions</div>'
+        f'<div class="chip-row">{chips}</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+    # Real clickable quick question buttons (compact)
+    qcols = st.columns(len(QUICK_QS))
+    for i, (lbl, q) in enumerate(QUICK_QS):
+        with qcols[i]:
+            if st.button(lbl, key=f"qq_{i}", use_container_width=True):
+                st.session_state.chat_history.append({"role":"user","content":q})
+                with st.spinner("Analyzing..."):
+                    result = chat(q)
+                st.session_state.chat_history.append(
+                    {"role":"assistant","content":result["analysis"]}
+                )
+                st.rerun()
+
+    # Fix 1 — input with on_change callback
+    st.text_input(
+        "Message",
+        placeholder="Ask about BTC, ETH, market conditions...",
+        key="chat_field",
+        on_change=on_submit,
+        label_visibility="collapsed"
+    )
+
+    if st.session_state.chat_history:
+        if st.button("🗑️ Clear chat", key="clear_chat", use_container_width=True):
+            st.session_state.chat_history = []
+            st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Process pending message after rerun (Fix 1)
+if st.session_state.get("pending_msg"):
+    msg = st.session_state.pop("pending_msg")
+    st.session_state.chat_history.append({"role":"user","content":msg})
+    with st.spinner("Analyzing..."):
+        result = chat(msg)
+    st.session_state.chat_history.append(
+        {"role":"assistant","content":result["analysis"]}
+    )
+    st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────
+# FOOTER
+# ─────────────────────────────────────────────────────────────
+st.markdown(
+    f'<div style="text-align:center;color:{MUTED};font-size:0.72rem;'
+    f'margin-top:50px;padding:20px;border-top:1px solid {BORDER};">'
+    f'⚠️ CoinTrend is an AI-powered decision support tool. '
+    f'This is <strong>not financial advice</strong>. '
+    f'Always do your own research before investing.<br><br>'
+    f'<span style="background:linear-gradient(90deg,{BTC},{ETH});'
+    f'-webkit-background-clip:text;-webkit-text-fill-color:transparent;'
+    f'font-weight:700;">CoinTrend</span> '
+    f'© 2026 — One Step Ahead of the Market'
+    f'</div>',
+    unsafe_allow_html=True
+)
