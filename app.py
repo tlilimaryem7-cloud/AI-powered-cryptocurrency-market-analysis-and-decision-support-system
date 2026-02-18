@@ -758,8 +758,8 @@ QUICK_QS = [
     ("Ξ ETH tomorrow?",    "What will Ethereum do tomorrow?"),
     ("⚠️ Main risks?",      f"What are the main risks for {name} today?"),
     ("🌍 Market overview?", "Give me a full crypto market overview"),
-    ("📉 Why falling?",     f"Why is {name} falling today?"),
-    ("📈 Why rising?",      f"Why is {name} rising today?"),
+    ("📉 Why falling?",  f"Why is {name} falling today?") if is_up else ("📈 Why rising?", f"Why is {name} rising today?"),
+    ("📈 Why rising?",   f"Why is {name} rising today?") if is_up else ("📉 Why falling?", f"Why is {name} falling today?"),
 ]
 
 with st.container():

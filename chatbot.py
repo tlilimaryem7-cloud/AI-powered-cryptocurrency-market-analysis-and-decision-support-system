@@ -110,9 +110,23 @@ INTENT_PATTERNS = {
         r"market.?cap.*(rank|list|top|highest)",
         r"(rank|ranking).*(coin|crypto|token)",
         r"most valuable (coin|crypto|token)",
+        r"(best|top|safest|cheapest).*(broker|exchange|platform|app).*(crypto|btc|eth|bitcoin|ethereum)",
+        r"(broker|exchange|platform).*(crypto|btc|eth|bitcoin|ethereum).*(best|top|safe|cheap|recommend)",
+        r"what (broker|exchange|platform).*(use|buy|trade|invest).*(crypto|btc|eth|bitcoin|ethereum)",
+        r"(coinbase|binance|kraken|bybit|kucoin|gemini|bitfinex|okx|robinhood|etoro).*(crypto|btc|eth|review|fee|safe)",
+        r"(broker|exchange).*(fee|fees|commission|spread|cost)",
+        r"(broker|exchange).*(regulated|regulation|license|safe|legit|trusted)",
+        r"(broker|exchange).*(deposit|withdraw|fiat|usd|eur)",
+        r"difference between (broker|exchange|cex|dex)",
+        r"(cex|dex|centralized|decentralized).*(exchange)",
+        r"how to (buy|trade|sell).*(btc|eth|bitcoin|ethereum|crypto)",
+        r"where to (buy|trade|sell).*(btc|eth|bitcoin|ethereum|crypto)",
+        r"index of (cryptocurrencies|coins|tokens)",
+        r"cryptocurrency (index|list|ranking|marketcap)",
+        
     ],
     "market_overview": [
-        r"what.*(happening|going on).*(crypto|market|btc|eth|bitcoin|ethereum)",
+        r"what.*(happening|going on).*(crypto|market|btc|eth|bitcoin|ethereum|news|update|today|situation|status)",
         r"(crypto|bitcoin|btc|eth|ethereum).*(news|update|today|situation|status|market)",
         r"\bmarket overview\b",
         r"\bmarket update\b",
@@ -212,7 +226,7 @@ PROMPTS = {
 
 For prediction questions, structure your response as:
 📊 ML Signal: State the model's direction and confidence percentage exactly.
-📰 Key News: List EXACTLY as numbered points, one per line with a line break between each. Never write them as a paragraph. Example format:
+📰 Key News: go back to the line and List EXACTLY as numbered points, one per line with a line break between each. Never write them as a paragraph. Example format:
 1. First news point here.
 2. Second news point here.
 3. Third news point here.
@@ -243,7 +257,7 @@ CRITICAL: Your response must directly and specifically answer the user's questio
 
 For market overview questions, structure your response as:
 🌍 Market Snapshot: current overall crypto market condition in 1-2 sentences.
-📰 Top Stories: list as numbered points, one per line, never as a paragraph:
+📰 Top Stories: go back to the line and list as numbered points, one per line, never as a paragraph:
 1. First story here.
 2. Second story here.
 3. Third story here.
@@ -498,9 +512,30 @@ def chat(question: str) -> dict:
             print("\n⚙️  Building live features...")
             features_series = build_live_features(coin if coin else "btc")
             live_features   = features_series.to_dict()
+
+            # ── NEW: fetch prediction to detect contradiction
+            prediction = predict(coin if coin else "btc")
+            pred_dir   = prediction["direction"]  # "UP" or "DOWN"
+            q_lower    = question.lower()
+
+            # Detect if user asks about a direction that contradicts the model
+            asks_rising  = any(w in q_lower for w in ["rising", "going up", "pumping", "rally", "surge"])
+            asks_falling = any(w in q_lower for w in ["falling", "going down", "dropping", "crashing", "dump"])
+
+            contradiction = (asks_rising and "DOWN" in pred_dir) or (asks_falling and "UP" in pred_dir)
+
             print("\n⚙️  Fetching news...")
             news     = fetch_news(coin if coin else "btc")
             articles = retrieve(question, news["all_articles"], coin if coin else "btc")
+
+            # ── NEW: if contradiction, override the question for the LLM
+            if contradiction:
+                actual_move = "falling" if "DOWN" in pred_dir else "rising"
+                question = (
+                    f"{question} — Note: the ML model actually predicts {coin.upper()} is {actual_move} "
+                    f"(confidence: {prediction['confidence']}%). "
+                    f"Please clarify this contradiction to the user and explain the actual direction instead."
+                )
 
         elif intent == "market_overview":
             print("\n⚙️  Fetching news (market overview)...")
