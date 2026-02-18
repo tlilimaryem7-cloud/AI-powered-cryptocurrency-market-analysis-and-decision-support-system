@@ -216,6 +216,19 @@ st.markdown(f"""
 # ─────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────
+import re
+
+def md_to_html(text: str) -> str:
+    """Convert basic markdown to HTML for chat bubble rendering."""
+    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+    text = re.sub(r'\*(.+?)\*',     r'<em>\1</em>',         text)
+    text = re.sub(r'(?m)^\d+\.\s+(.+)$', r'<li>\1</li>', text)
+    text = re.sub(r'(<li>.*?</li>)+',    r'<ol>\g<0></ol>', text, flags=re.DOTALL)
+    text = re.sub(r'(?m)^[\*\-•]\s+(.+)$', r'<li>\1</li>', text)
+    text = re.sub(r'(<li>.*?</li>)+',       r'<ul>\g<0></ul>', text, flags=re.DOTALL)
+    text = text.replace('\n', '<br>')
+    return text
+
 def hex_rgba(h, a=0.1):
     r, g, b = int(h[1:3],16), int(h[3:5],16), int(h[5:7],16)
     return f"rgba({r},{g},{b},{a})"
@@ -757,7 +770,7 @@ with st.container():
         bubbles = "".join(
             f'<div class="chat-bubble-user">{m["content"]}</div>'
             if m["role"] == "user"
-            else f'<div class="chat-bubble-bot">{m["content"]}</div>'
+            else f'<div class="chat-bubble-bot">{md_to_html(m["content"])}</div>'
             for m in st.session_state.chat_history
         )
         st.markdown(f'<div class="chat-history">{bubbles}</div>', unsafe_allow_html=True)

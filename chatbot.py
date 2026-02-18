@@ -1,17 +1,11 @@
 # ============================================================
-# CHATBOT — Intent Detection + Routing
+# CHATBOT — Intent Detection + Routing  (v2 — all fixes)
 # ============================================================
-# Brain of the system. Receives user question, detects intent
-# and coin, routes to the right pipeline and prompt template.
-#
-# Intent types:
-#   - prediction      : "What will BTC do tomorrow?"
-#   - explanation     : "Why is BTC dropping?"
-#   - market_overview : "What's happening in crypto?"
-#   - investment_advice: "Should I buy ETH?"
-#   - off_topic       : anything not crypto-related
-#
-# Run: python chatbot.py
+# Changes vs v1:
+#   ✅ FIX 1 — Greeting detection (hello/hi/hey no longer blocked)
+#   ✅ FIX 2 — News formatting: numbered points forced onto new lines
+#   ✅ FIX 3 — factual_crypto as 6th intent (no ML/news pipeline)
+#   ✅ FIX 4 — User question always injected into system prompt
 # ============================================================
 
 import sys
@@ -19,7 +13,7 @@ import os
 import re
 
 # ─────────────────────────────────────────────────────────────
-# PATH SETUP — adjust to your project structure
+# PATH SETUP
 # ─────────────────────────────────────────────────────────────
 PROJECT_ROOT = r"C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system"
 SRC_PATH     = os.path.join(PROJECT_ROOT, "src")
@@ -37,17 +31,38 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
     raise ValueError("❌ GROQ_API_KEY not found in .env file")
 
-client = Groq(api_key=GROQ_API_KEY)
+client      = Groq(api_key=GROQ_API_KEY)
 MODEL       = "llama-3.3-70b-versatile"
 MAX_TOKENS  = 1024
 TEMPERATURE = 0.3
 
 
 # ═══════════════════════════════════════════════════════════════
+# FIX 1 — GREETING DETECTION
+# ═══════════════════════════════════════════════════════════════
+
+GREETINGS = [
+    "hello", "hi", "hey", "good morning", "good afternoon",
+    "good evening", "howdy", "greetings", "salut", "bonjour",
+    "sup", "what's up", "whats up", "yo",
+]
+
+def is_greeting(question: str) -> bool:
+    """Return True if the message is a greeting with no crypto content."""
+    q = question.lower().strip().rstrip("!.,?")
+    # Exact match or starts-with match on short messages
+    if q in GREETINGS:
+        return True
+    for g in GREETINGS:
+        if q.startswith(g) and len(q) <= len(g) + 10:
+            return True
+    return False
+
+
+# ═══════════════════════════════════════════════════════════════
 # INTENT DETECTION
 # ═══════════════════════════════════════════════════════════════
 
-# ── Keywords for intent classification
 INTENT_PATTERNS = {
     "prediction": [
         r"\bwill\b.*(btc|eth|bitcoin|ethereum|crypto)",
@@ -66,6 +81,35 @@ INTENT_PATTERNS = {
         r"\bexplain\b",
         r"\bbehind\b.*(move|drop|pump|crash|rally)",
         r"reason.*(price|market)",
+    ],
+    # FIX 3 — factual_crypto checked BEFORE market_overview to avoid swallowing
+    "factual_crypto": [
+        r"top \d+ coin",
+        r"best coin",
+        r"biggest coin",
+        r"largest crypto",
+        r"what is (defi|nft|halving|staking|blockchain|altcoin|layer|web3|dao|liquidity)",
+        r"what are (altcoins|stablecoins|nfts|layer)",
+        r"explain (bitcoin|ethereum|crypto|blockchain|defi|nft|halving|staking)",
+        r"difference between",
+        r"how does.*(crypto|blockchain|btc|eth|mining|staking|defi)",
+        r"what.*mean.*(crypto|blockchain|btc|eth|defi)",
+        r"definition of",
+        r"history of (bitcoin|ethereum|crypto)",
+        r"who (created|invented|founded).*(bitcoin|ethereum|crypto)",
+        r"how many (bitcoin|btc|ethereum|eth)",
+        r"max supply",
+        r"total supply",
+        r"part of (defi|crypto|blockchain|ethereum|bitcoin)",
+        r"(smart contract|consensus|protocol|layer|node|wallet|seed phrase)",
+        r"how (do|does|did).*(work|function)",
+        r"what.*(role|purpose).*(crypto|blockchain|defi|btc|eth)",
+        r"related to (crypto|blockchain|defi|btc|eth)",
+        r"examples of (defi|nft|altcoin|layer|web3|dao|liquidity)",
+        r"(highest|biggest|largest|top).*(market.?cap|marketcap)",
+        r"market.?cap.*(rank|list|top|highest)",
+        r"(rank|ranking).*(coin|crypto|token)",
+        r"most valuable (coin|crypto|token)",
     ],
     "market_overview": [
         r"what.*(happening|going on).*(crypto|market|btc|eth|bitcoin|ethereum)",
@@ -89,77 +133,69 @@ INTENT_PATTERNS = {
     ],
 }
 
-# ── Keywords for coin detection
 COIN_PATTERNS = {
     "btc": [r"\bbtc\b", r"\bbitcoin\b", r"\bsatoshi\b"],
     "eth": [r"\beth\b", r"\bethereum\b", r"\bether\b", r"\bdefi\b", r"\bvitalik\b"],
 }
 
-# ── Keywords to confirm topic is crypto-related
 CRYPTO_CONTEXT_KEYWORDS = [
     "btc", "eth", "bitcoin", "ethereum", "crypto", "blockchain",
     "defi", "altcoin", "market", "token", "coin", "wallet",
     "trading", "exchange", "bull", "bear", "halving", "etf",
     "mining", "staking", "price", "chart", "rally", "dump",
+    "nft", "web3", "layer", "dao", "liquidity", "supply",
 ]
 
 
 def detect_coin(question: str) -> str | None:
-    """
-    Detect which coin the question is about.
-    Returns 'btc', 'eth', or None if ambiguous/not found.
-    """
-    q = question.lower()
+    q     = question.lower()
     found = []
     for coin, patterns in COIN_PATTERNS.items():
         for pattern in patterns:
             if re.search(pattern, q):
                 found.append(coin)
                 break
-
     if len(found) == 1:
         return found[0]
     if len(found) == 2:
-        return "both"     # e.g. "compare BTC and ETH"
-    return None           # no coin detected
+        return "both"
+    return None
 
 
 def is_crypto_related(question: str) -> bool:
-    """
-    Returns True if the question is related to crypto/finance.
-    Used to block off-topic questions before intent detection.
-    """
     q = question.lower()
     return any(kw in q for kw in CRYPTO_CONTEXT_KEYWORDS)
 
 
 def detect_intent(question: str) -> str:
-    """
-    Classify the user's question into one of 5 intent types.
-
-    Returns
-    -------
-    str : 'prediction' | 'explanation' | 'market_overview'
-          | 'investment_advice' | 'off_topic'
-    """
-    # Step 1 — Block off-topic immediately
     if not is_crypto_related(question):
         return "off_topic"
-
-    # Step 2 — Match intent patterns (priority order matters)
     q = question.lower()
-    for intent, patterns in INTENT_PATTERNS.items():
-        for pattern in patterns:
+    # FIX 3: factual_crypto checked before market_overview
+    for intent in ["prediction", "explanation", "factual_crypto",
+                   "market_overview", "investment_advice"]:
+        for pattern in INTENT_PATTERNS[intent]:
             if re.search(pattern, q):
                 return intent
-
-    # Step 3 — Fallback: crypto-related but no clear intent
-    # → treat as market overview (safest default)
     return "market_overview"
 
 
 # ═══════════════════════════════════════════════════════════════
-# PROMPT TEMPLATES — one per intent
+# FIX 2 — POST-PROCESSOR: force numbered points onto new lines
+# ═══════════════════════════════════════════════════════════════
+
+def format_llm_response(text: str) -> str:
+    """
+    Ensure numbered list items (1. 2. 3. ...) are each on their own line.
+    This fixes cases where the LLM writes them inline as a paragraph.
+    """
+    # Insert newline before every "N." that follows non-newline content
+    text = re.sub(r'(?<!\n)\s*(\d+\.)\s+', r'\n\1 ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+# ═══════════════════════════════════════════════════════════════
+# PROMPT TEMPLATES
 # ═══════════════════════════════════════════════════════════════
 
 SYSTEM_BASE = """You are a professional cryptocurrency market analyst.
@@ -176,13 +212,17 @@ PROMPTS = {
 
 For prediction questions, structure your response as:
 📊 ML Signal: State the model's direction and confidence percentage exactly.
-📰 Key News: 2-3 most relevant recent news points that affect this prediction.
+📰 Key News: List EXACTLY as numbered points, one per line with a line break between each. Never write them as a paragraph. Example format:
+1. First news point here.
+2. Second news point here.
+3. Third news point here.
 ✅ Bullish Signals: factors supporting an upward move (max 2-3 bullet points).
 ⚠️ Risk Factors: factors that could invalidate the prediction (max 2-3 bullet points).
 🎯 Short-Term Outlook: 1-2 sentence conclusion based on ML signal + news combined.
 ⚠️ This is not financial advice.
 
-Keep total response under 280 words. Be specific — use numbers and percentages from the data.""",
+Keep total response under 280 words. Be specific — use numbers and percentages from the data.
+CRITICAL: Your response must directly and specifically answer the user's question below.""",
 
     # ── EXPLANATION ─────────────────────────────────────────
     "explanation": SYSTEM_BASE + """
@@ -195,32 +235,51 @@ For explanation questions, structure your response as:
 💡 Summary: 1 sentence takeaway.
 ⚠️ This is not financial advice.
 
-Keep total response under 280 words. Prioritize explaining the cause, not the prediction.""",
+Keep total response under 280 words. Prioritize explaining the cause, not the prediction.
+CRITICAL: Your response must directly and specifically answer the user's question below.""",
 
     # ── MARKET OVERVIEW ─────────────────────────────────────
     "market_overview": SYSTEM_BASE + """
 
 For market overview questions, structure your response as:
 🌍 Market Snapshot: current overall crypto market condition in 1-2 sentences.
-📰 Top Stories: 3-4 most important recent developments (use bullet points).
+📰 Top Stories: list as numbered points, one per line, never as a paragraph:
+1. First story here.
+2. Second story here.
+3. Third story here.
 📊 Sentiment: what Fear & Greed and macro signals are indicating.
 🔮 Near-Term Factors to Watch: 2-3 key events or indicators to monitor.
 ⚠️ This is not financial advice.
 
-Keep total response under 280 words. Focus on breadth — cover both BTC, ETH, and macro context.""",
+Keep total response under 280 words. Focus on breadth — cover both BTC, ETH, and macro context.
+CRITICAL: Your response must directly and specifically answer the user's question below.""",
 
     # ── INVESTMENT ADVICE ───────────────────────────────────
     "investment_advice": SYSTEM_BASE + """
 
 For investment advice questions, structure your response as:
 📊 Model Signal: what the ML model predicts for direction and confidence.
-📰 Market Context: most relevant news that could affect a buying/selling decision.
+📰 Market Context: most relevant news that could affect a buying/selling decision, as numbered points on separate lines.
 ✅ Arguments For: data-backed reasons supporting the action (max 3).
 ⚠️ Arguments Against: data-backed risks that argue against the action (max 3).
 🎯 Neutral Assessment: a balanced 1-2 sentence view based purely on the data.
 ⚠️ This is not financial advice. Always do your own research and consider your risk tolerance.
 
-Keep total response under 300 words. Stay neutral — never recommend a specific action.""",
+Keep total response under 300 words. Stay neutral — never recommend a specific action.
+CRITICAL: Your response must directly and specifically answer the user's question below.""",
+
+    # ── FIX 3: FACTUAL CRYPTO ───────────────────────────────
+    "factual_crypto": SYSTEM_BASE + """
+
+For factual crypto knowledge questions, answer directly and clearly without a fixed structure.
+- Answer the user's SPECIFIC question first and foremost
+- Use your knowledge about crypto markets, coins, rankings, and technology
+- If listing items (e.g. top 5 coins), use a numbered list with one item per line
+- Be specific, accurate, and concise
+- Keep the response under 200 words
+⚠️ This is not financial advice.
+
+CRITICAL: Your response must directly and specifically answer the user's question below.""",
 }
 
 
@@ -230,35 +289,27 @@ Keep total response under 300 words. Stay neutral — never recommend a specific
 
 OFF_TOPIC_RESPONSES = {
     "default": (
-        "Thank you for your question. However, this falls outside my area of expertise.\n\n"
-        "I am a specialized cryptocurrency market analyst. My analysis is limited to:\n"
+        "I'm a specialized cryptocurrency market analyst. My analysis is limited to:\n\n"
         "  • 📈 Bitcoin (BTC) and Ethereum (ETH) price direction predictions\n"
         "  • 📰 Crypto market news, sentiment, and macro impact\n"
         "  • 🔍 Explaining price movements and market behavior\n"
         "  • 💡 Overall crypto market overviews\n"
         "  • ⚖️  Balanced data-driven perspective before buying or selling\n\n"
-        "I am not able to assist with topics unrelated to cryptocurrency markets. "
-        "If you have a question about BTC, ETH, or the broader crypto market, "
-        "I am here to help."
+        "If you have a question about BTC, ETH, or the broader crypto market, I'm here to help!"
     )
 }
 
 
 # ═══════════════════════════════════════════════════════════════
-# CONTEXT BUILDER — per intent
+# CONTEXT BUILDER
 # ═══════════════════════════════════════════════════════════════
 
 def build_context(intent: str, coin: str | None,
                   prediction: dict | None,
                   articles: list,
                   live_features: dict | None = None) -> str:
-    """
-    Build the context string injected into the LLM prompt.
-    Content varies by intent.
-    """
     lines = []
 
-    # ── ML Prediction block (for prediction + investment_advice)
     if prediction and intent in ["prediction", "investment_advice"]:
         lines += [
             "=" * 50,
@@ -270,7 +321,6 @@ def build_context(intent: str, coin: str | None,
             "",
         ]
 
-    # ── Live feature values (for explanation)
     if live_features and intent == "explanation":
         lines += [
             "=" * 50,
@@ -296,7 +346,6 @@ def build_context(intent: str, coin: str | None,
                 lines.append(f"  {label:<30}: {round(float(val), 4)}")
         lines.append("")
 
-    # ── News articles block (always included except off_topic)
     if articles:
         lines += [
             "=" * 50,
@@ -314,6 +363,10 @@ def build_context(intent: str, coin: str | None,
     return "\n".join(lines)
 
 
+# ═══════════════════════════════════════════════════════════════
+# LLM CALL — FIX 4: user question injected into system prompt
+# ═══════════════════════════════════════════════════════════════
+
 def build_user_prompt(question: str, context: str) -> str:
     return (
         f"User Question: {question}\n\n"
@@ -322,14 +375,21 @@ def build_user_prompt(question: str, context: str) -> str:
     )
 
 
-# ═══════════════════════════════════════════════════════════════
-# LLM CALL
-# ═══════════════════════════════════════════════════════════════
-
 def call_llm(intent: str, question: str, context: str) -> str:
-    """Call Groq LLM with the intent-specific system prompt."""
-    system_prompt = PROMPTS.get(intent, PROMPTS["market_overview"])
-    user_prompt   = build_user_prompt(question, context)
+    """
+    Call Groq LLM.
+    FIX 4: Append the user's specific question to the system prompt so
+    the LLM never ignores it in favour of the generic structure.
+    """
+    base_prompt   = PROMPTS.get(intent, PROMPTS["market_overview"])
+    # Inject question into system prompt
+    system_prompt = (
+        base_prompt +
+        f'\n\nThe user\'s specific question is: "{question}". '
+        "Make sure your response directly and specifically addresses this question. "
+        "Do not give a generic answer."
+    )
+    user_prompt = build_user_prompt(question, context)
 
     try:
         response = client.chat.completions.create(
@@ -341,7 +401,10 @@ def call_llm(intent: str, question: str, context: str) -> str:
             max_tokens  = MAX_TOKENS,
             temperature = TEMPERATURE,
         )
-        return response.choices[0].message.content
+        raw = response.choices[0].message.content
+        # FIX 2: post-process to ensure numbered points are on new lines
+        return format_llm_response(raw)
+
     except Exception as e:
         return f"❌ LLM call failed: {e}"
 
@@ -354,24 +417,16 @@ def chat(question: str) -> dict:
     """
     Main entry point for the chatbot.
 
-    1. Detect intent + coin
-    2. Block off-topic
-    3. Route to the right pipeline
-    4. Build context
-    5. Call LLM with correct prompt template
-    6. Return structured result
-
-    Parameters
-    ----------
-    question : str — raw user question
-
-    Returns
-    -------
-    dict with keys:
-        question, intent, coin, prediction, articles, analysis
+    1. Check greeting → short-circuit immediately
+    2. Detect intent + coin
+    3. Block off-topic
+    4. Route to the right pipeline
+    5. Build context
+    6. Call LLM with correct prompt (question always injected)
+    7. Return structured result
     """
     from news.tavily_fetcher import fetch_news
-    from news.rag            import retrieve, format_context
+    from news.rag            import retrieve
     from live_pipeline       import predict, build_live_features
 
     print(f"\n{'='*60}")
@@ -379,66 +434,79 @@ def chat(question: str) -> dict:
     print(f"{'='*60}")
     print(f"  Question : {question}")
 
-    # ── Step 1: Intent + coin detection
+    # ── FIX 1: Greeting short-circuit
+    if is_greeting(question):
+        print("  → Greeting detected ✅")
+        return {
+            "question" : question,
+            "intent"   : "greeting",
+            "coin"     : None,
+            "prediction": None,
+            "articles" : [],
+            "analysis" : (
+                "👋 Hello! I'm CoinTrend AI Analyst.\n\n"
+                "I can help you with:\n"
+                "  • 📈 BTC & ETH price direction predictions\n"
+                "  • 📰 Latest crypto & macro news analysis\n"
+                "  • 🔍 Explaining market movements\n"
+                "  • 💡 Crypto market overviews\n\n"
+                "Ask me anything about Bitcoin, Ethereum, or the crypto market!"
+            ),
+        }
+
+    # ── Intent + coin detection
     intent = detect_intent(question)
     coin   = detect_coin(question)
 
     print(f"  Intent   : {intent}")
     print(f"  Coin     : {coin if coin else 'not specified'}")
 
-    # ── Step 2: Block off-topic
+    # ── Block off-topic
     if intent == "off_topic":
         print("  → Off-topic question blocked ✅")
         return {
-            "question" : question,
-            "intent"   : "off_topic",
-            "coin"     : None,
+            "question"  : question,
+            "intent"    : "off_topic",
+            "coin"      : None,
             "prediction": None,
-            "articles" : [],
-            "analysis" : OFF_TOPIC_RESPONSES["default"],
+            "articles"  : [],
+            "analysis"  : OFF_TOPIC_RESPONSES["default"],
         }
 
-    # ── Step 3: Resolve coin fallback
-    # If no coin detected, default to BTC for prediction/investment,
-    # None is fine for market_overview
+    # ── Coin fallback
     if coin is None and intent in ["prediction", "investment_advice", "explanation"]:
         coin = "btc"
-        print(f"  → No coin detected, defaulting to BTC")
+        print("  → No coin detected, defaulting to BTC")
     if coin == "both":
         coin = "btc"
-        print(f"  → Both coins detected, defaulting to BTC")
+        print("  → Both coins detected, defaulting to BTC")
 
     prediction    = None
     live_features = None
     articles      = []
 
-    # ── Step 4: Run pipeline based on intent
+    # ── Pipeline routing
     try:
-        # PREDICTION — needs ML model + news
         if intent == "prediction":
             print("\n⚙️  Running ML prediction...")
             prediction = predict(coin)
             print("\n⚙️  Fetching news...")
-            news       = fetch_news(coin)
-            articles   = retrieve(question, news["all_articles"], coin)
+            news     = fetch_news(coin)
+            articles = retrieve(question, news["all_articles"], coin)
 
-        # EXPLANATION — needs live features + news (no prediction direction needed)
         elif intent == "explanation":
-            print("\n⚙️  Building live features for explanation...")
+            print("\n⚙️  Building live features...")
             features_series = build_live_features(coin if coin else "btc")
             live_features   = features_series.to_dict()
             print("\n⚙️  Fetching news...")
             news     = fetch_news(coin if coin else "btc")
             articles = retrieve(question, news["all_articles"], coin if coin else "btc")
 
-        # MARKET OVERVIEW — news only, no ML
         elif intent == "market_overview":
             print("\n⚙️  Fetching news (market overview)...")
-            # Fetch for both coins to get broader picture
-            news_btc  = fetch_news("btc")
-            news_eth  = fetch_news("eth")
-            all_news  = news_btc["all_articles"] + news_eth["all_articles"]
-            # Deduplicate by URL
+            news_btc = fetch_news("btc")
+            news_eth = fetch_news("eth")
+            all_news = news_btc["all_articles"] + news_eth["all_articles"]
             seen, deduped = set(), []
             for a in all_news:
                 if a["url"] not in seen:
@@ -446,13 +514,19 @@ def chat(question: str) -> dict:
                     deduped.append(a)
             articles = retrieve(question, deduped, "btc", top_n=8)
 
-        # INVESTMENT ADVICE — needs ML + news
         elif intent == "investment_advice":
             print("\n⚙️  Running ML prediction for investment context...")
             prediction = predict(coin)
             print("\n⚙️  Fetching news...")
-            news       = fetch_news(coin)
-            articles   = retrieve(question, news["all_articles"], coin)
+            news     = fetch_news(coin)
+            articles = retrieve(question, news["all_articles"], coin)
+
+        elif intent == "factual_crypto":
+            # FIX 3: No ML, no Tavily — LLM answers from its own knowledge
+            print("\n⚙️  Factual question — skipping ML & news pipeline")
+            articles      = []
+            prediction    = None
+            live_features = None
 
     except Exception as e:
         print(f"  ⚠️  Pipeline error: {e}")
@@ -465,7 +539,7 @@ def chat(question: str) -> dict:
             "analysis"  : f"❌ Error running analysis pipeline: {e}",
         }
 
-    # ── Step 5: Build context + call LLM
+    # ── Build context + call LLM
     print("\n⚙️  Building context...")
     context = build_context(
         intent        = intent,
@@ -495,7 +569,6 @@ def chat(question: str) -> dict:
 # ═══════════════════════════════════════════════════════════════
 
 def display_result(result: dict):
-    """Pretty-print the chatbot result."""
     print(f"\n{'='*60}")
     print(f"  CHATBOT RESPONSE")
     print(f"{'='*60}")
@@ -517,7 +590,7 @@ def display_result(result: dict):
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  🤖 CRYPTO ANALYST CHATBOT")
+    print("  🤖 CRYPTO ANALYST CHATBOT  (v2)")
     print("  Powered by ML prediction + live news + LLaMA 3.3 70B")
     print("  Type 'exit' or 'quit' to stop")
     print("="*60)

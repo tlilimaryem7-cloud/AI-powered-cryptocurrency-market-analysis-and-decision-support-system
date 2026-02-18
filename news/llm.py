@@ -50,7 +50,7 @@ Your analysis must always follow this structure:
 Important rules:
 - Always be factual and data-driven
 - Never guarantee profits or promise returns
-- Always include a disclaimer that this is not financial advice
+- Always include a disclaimer that this is not a financial advice
 - Be concise — total response should be under 300 words
 - Use the exact confidence percentage from the ML model
 """
