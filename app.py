@@ -817,7 +817,7 @@ with st.container():
                 if st.button(lbl, key=f"qq_{i}", use_container_width=True):
                     st.session_state.chat_history.append({"role": "user", "content": question})
                     with st.spinner("Analyzing…"):
-                        result = chat(question)
+                        result = chat(question, history=st.session_state.chat_history[:-1])
                     st.session_state.chat_history.append({"role": "assistant", "content": result["analysis"]})
                     st.rerun()
 
@@ -826,7 +826,7 @@ with st.container():
         st.session_state.chat_history.append(
             {"role": "user", "content": user_msg.strip()})
         with st.spinner("Analyzing…"):
-            result = chat(user_msg.strip())
+            result = chat(user_msg.strip(), history=st.session_state.chat_history[:-1])
         st.session_state.chat_history.append(
             {"role": "assistant", "content": result["analysis"]})
         st.rerun()

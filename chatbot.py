@@ -38,7 +38,7 @@ TEMPERATURE = 0.3
 
 
 # ═══════════════════════════════════════════════════════════════
-# FIX 1 — GREETING DETECTION
+# FIX 1 — GREETING and followup DETECTION
 # ═══════════════════════════════════════════════════════════════
 
 GREETINGS = [
@@ -58,6 +58,30 @@ def is_greeting(question: str) -> bool:
             return True
     return False
 
+
+FOLLOWUP_PATTERNS = [
+    r"^why (do you|did you|is that|so)",
+    r"^how (do you|so|come|about)",
+    r"^what (about|do you mean|else|makes you)",
+    r"^(and|so|but|then|ok|okay|really|interesting)",
+    r"^(tell me more|explain|elaborate|go on|continue)",
+    r"^(which|what one|how much|how long|since when)",
+    r"^(is that|are they|does that|do they)",
+    r"^(based on|given that|considering)",
+    r"^(you mentioned|you said|earlier you)",
+    r"^(same|similar|different|compared)",
+    r"^(why|how|what|which|when|where|who)\?*$",
+    r"^(what is the|what was the|what are the)",
+    r"^(can you|could you|would you)",
+]
+
+def is_followup(question: str) -> bool:
+    """Return True if question looks like a follow-up with no crypto context."""
+    q = question.lower().strip()
+    for pattern in FOLLOWUP_PATTERNS:
+        if re.search(pattern, q):
+            return True
+    return False
 
 # ═══════════════════════════════════════════════════════════════
 # INTENT DETECTION
@@ -321,8 +345,21 @@ OFF_TOPIC_RESPONSES = {
 def build_context(intent: str, coin: str | None,
                   prediction: dict | None,
                   articles: list,
-                  live_features: dict | None = None) -> str:
+                  live_features: dict | None = None,
+                  history: list = None) -> str:
     lines = []
+
+    # Inject conversation history for follow-up questions
+    if history:
+        lines += [
+            "=" * 50,
+            "CONVERSATION HISTORY (last 4 messages)",
+            "=" * 50,
+        ]
+        for msg in history[-4:]:
+            role = "User" if msg["role"] == "user" else "Assistant"
+            lines.append(f"[{role}]: {msg['content'][:300]}")
+        lines.append("")
 
     if prediction and intent in ["prediction", "investment_advice"]:
         lines += [
@@ -342,17 +379,17 @@ def build_context(intent: str, coin: str | None,
             "=" * 50,
         ]
         feature_labels = {
-            "rsi_14"              : "RSI-14",
-            "macd_histogram"      : "MACD Histogram",
+            "rsi_14"               : "RSI-14",
+            "macd_histogram"       : "MACD Histogram",
             "momentum_acceleration": "Momentum Acceleration",
-            "volatility_21d"      : "Volatility 21d",
-            "bb_pct"              : "Bollinger %B",
-            "vix_ma14"            : "VIX MA14",
-            "vix_regime"          : "VIX Regime (>20 = fear)",
-            "fear_greed_ma7"      : "Fear & Greed MA7",
-            "bull_bear_flag"      : "Bull/Bear Flag (1=bull)",
-            "spy_return_ma7"      : "SPY Return MA7",
-            "dxy_return_ma7"      : "DXY Return MA7",
+            "volatility_21d"       : "Volatility 21d",
+            "bb_pct"               : "Bollinger %B",
+            "vix_ma14"             : "VIX MA14",
+            "vix_regime"           : "VIX Regime (>20 = fear)",
+            "fear_greed_ma7"       : "Fear & Greed MA7",
+            "bull_bear_flag"       : "Bull/Bear Flag (1=bull)",
+            "spy_return_ma7"       : "SPY Return MA7",
+            "dxy_return_ma7"       : "DXY Return MA7",
         }
         for key, label in feature_labels.items():
             val = live_features.get(key)
@@ -388,15 +425,11 @@ def build_user_prompt(question: str, context: str) -> str:
         "Please provide your structured analysis based strictly on the data above."
     )
 
+def call_llm(intent: str, question: str, context: str, history: list = None) -> str:
+    if history is None:
+        history = []
 
-def call_llm(intent: str, question: str, context: str) -> str:
-    """
-    Call Groq LLM.
-    FIX 4: Append the user's specific question to the system prompt so
-    the LLM never ignores it in favour of the generic structure.
-    """
     base_prompt   = PROMPTS.get(intent, PROMPTS["market_overview"])
-    # Inject question into system prompt
     system_prompt = (
         base_prompt +
         f'\n\nThe user\'s specific question is: "{question}". '
@@ -405,18 +438,23 @@ def call_llm(intent: str, question: str, context: str) -> str:
     )
     user_prompt = build_user_prompt(question, context)
 
+    # Build messages: system + last 6 history turns + current user message
+    messages = [{"role": "system", "content": system_prompt}]
+
+    for msg in history[-6:]:
+        role = "assistant" if msg["role"] == "assistant" else "user"
+        messages.append({"role": role, "content": msg["content"]})
+
+    messages.append({"role": "user", "content": user_prompt})
+
     try:
         response = client.chat.completions.create(
-            model    = MODEL,
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_prompt},
-            ],
+            model       = MODEL,
+            messages    = messages,
             max_tokens  = MAX_TOKENS,
             temperature = TEMPERATURE,
         )
         raw = response.choices[0].message.content
-        # FIX 2: post-process to ensure numbered points are on new lines
         return format_llm_response(raw)
 
     except Exception as e:
@@ -427,7 +465,10 @@ def call_llm(intent: str, question: str, context: str) -> str:
 # MAIN ROUTER
 # ═══════════════════════════════════════════════════════════════
 
-def chat(question: str) -> dict:
+def chat(question: str, history: list = None) -> dict:
+    if history is None:
+        history = []
+
     """
     Main entry point for the chatbot.
 
@@ -477,15 +518,21 @@ def chat(question: str) -> dict:
 
     # ── Block off-topic
     if intent == "off_topic":
-        print("  → Off-topic question blocked ✅")
-        return {
-            "question"  : question,
-            "intent"    : "off_topic",
-            "coin"      : None,
-            "prediction": None,
-            "articles"  : [],
-            "analysis"  : OFF_TOPIC_RESPONSES["default"],
-        }
+        # Check if it's a follow-up to a previous crypto conversation
+        if history and is_followup(question):
+            # Inherit last known intent and coin from history context
+            intent = "explanation"
+            print("  → Follow-up detected, routing to explanation ✅")
+        else:
+            print("  → Off-topic question blocked ✅")
+            return {
+                "question"  : question,
+                "intent"    : "off_topic",
+                "coin"      : None,
+                "prediction": None,
+                "articles"  : [],
+                "analysis"  : OFF_TOPIC_RESPONSES["default"],
+            }
 
     # ── Coin fallback
     if coin is None and intent in ["prediction", "investment_advice", "explanation"]:
@@ -582,10 +629,11 @@ def chat(question: str) -> dict:
         prediction    = prediction,
         articles      = articles,
         live_features = live_features,
+        history       = history,  
     )
 
     print("\n⚙️  Calling LLM...")
-    analysis = call_llm(intent, question, context)
+    analysis = call_llm(intent, question, context, history)
 
     print("\n✅ Analysis complete")
 
