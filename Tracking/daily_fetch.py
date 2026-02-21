@@ -16,6 +16,8 @@ import requests
 import pandas as pd
 import numpy as np
 from datetime import date, datetime
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
 
 # ─────────────────────────────────────────────────────────────
 # PATH SETUP — point to your project root
@@ -189,7 +191,7 @@ def show_summary(conn):
 # ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("\n" + "="*55)
-    print(f"  STEP 2 — Daily Fetch → raw_prices")
+    print(f"  STEP 2 — Daily Fetch -> raw_prices")
     print(f"  Date : {TODAY}")
     print("="*55)
 

@@ -1,0 +1,292 @@
+[00:54:39] 
+[00:54:39] =======================================================
+[00:54:39]   CRYPTO TRACKER — DAILY PIPELINE
+[00:54:39]   Date : 2026-02-21 00:54:39
+[00:54:39] =======================================================
+[00:54:39] 
+[00:54:39] ==================================================
+[00:54:39] START : Step 2 — Daily Fetch
+[00:54:39] ==================================================
+[00:54:40]   
+[00:54:40]   =======================================================
+[00:54:40]   ⚠️  Traceback (most recent call last):
+[00:54:40]   ⚠️    File "C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system\tracking\daily_fetch.py", line 192, in <module>
+[00:54:40]   ⚠️      print(f"  STEP 2 — Daily Fetch \u2192 raw_prices")
+[00:54:40]   ⚠️      ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[00:54:40]   ⚠️    File "C:\Users\tlili\anaconda3\Lib\encodings\cp1252.py", line 19, in encode
+[00:54:40]   ⚠️      return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+[00:54:40]   ⚠️             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[00:54:40]   ⚠️  UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 23: character maps to <undefined>
+[00:54:40] ❌ FAILED : Step 2 — Daily Fetch (exit code 1)
+
+[00:54:40] 🛑 Critical step failed — stopping pipeline
+[00:54:40] 
+[00:54:40] =======================================================
+[00:54:40]   PIPELINE SUMMARY
+[00:54:40] =======================================================
+[00:54:40]   ❌ FAILED  Step 2 — Daily Fetch
+[00:54:40] 
+[00:54:40]   Total time : 1s
+[00:54:40]   Log saved  : C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system\tracking\logs\pipeline_2026-02-21.log
+[00:54:41] =======================================================
+[00:58:27] 
+[00:58:27] =======================================================
+[00:58:27]   CRYPTO TRACKER — DAILY PIPELINE
+[00:58:27]   Date : 2026-02-21 00:58:27
+[00:58:27] =======================================================
+[00:58:27] 
+[00:58:27] ==================================================
+[00:58:27] START : Step 2 — Daily Fetch
+[00:58:27] ==================================================
+[00:58:28]   
+[00:58:28]   =======================================================
+[00:58:28]     STEP 2 — Daily Fetch -> raw_prices
+[00:58:28]     Date : 2026-02-21
+[00:58:28]   =======================================================
+[00:58:28]   ⚠️  Traceback (most recent call last):
+[00:58:28]   ⚠️    File "C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system\tracking\daily_fetch.py", line 198, in <module>
+[00:58:28]   ⚠️      print("  \u2705 Connected to crypto_tracker")
+[00:58:28]   ⚠️      ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[00:58:28]   ⚠️    File "C:\Users\tlili\anaconda3\Lib\encodings\cp1252.py", line 19, in encode
+[00:58:28]   ⚠️      return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+[00:58:28]   ⚠️             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[00:58:28]   ⚠️  UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 2: character maps to <undefined>
+[00:58:28] ❌ FAILED : Step 2 — Daily Fetch (exit code 1)
+
+[00:58:28] 🛑 Critical step failed — stopping pipeline
+[00:58:28] 
+[00:58:28] =======================================================
+[00:58:28]   PIPELINE SUMMARY
+[00:58:28] =======================================================
+[00:58:28]   ❌ FAILED  Step 2 — Daily Fetch
+[00:58:28] 
+[00:58:28]   Total time : 1s
+[00:58:28]   Log saved  : C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system\tracking\logs\pipeline_2026-02-21.log
+[00:58:28] =======================================================
+[00:59:03] 
+[00:59:03] =======================================================
+[00:59:03]   CRYPTO TRACKER — DAILY PIPELINE
+[00:59:03]   Date : 2026-02-21 00:59:03
+[00:59:03] =======================================================
+[00:59:03] 
+[00:59:03] ==================================================
+[00:59:03] START : Step 2 — Daily Fetch
+[00:59:03] ==================================================
+[00:59:07] ❌ ERROR : Step 2 — Daily Fetch — 'NoneType' object has no attribute 'splitlines'
+
+[00:59:07] 🛑 Critical step failed — stopping pipeline
+[00:59:07] 
+[00:59:07] =======================================================
+[00:59:07]   PIPELINE SUMMARY
+[00:59:07] =======================================================
+[00:59:07]   ❌ FAILED  Step 2 — Daily Fetch
+[00:59:07] 
+[00:59:07]   Total time : 3s
+[00:59:07]   Log saved  : C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system\tracking\logs\pipeline_2026-02-21.log
+[00:59:07] =======================================================
+[01:05:12] 
+[01:05:12] =======================================================
+[01:05:12]   CRYPTO TRACKER — DAILY PIPELINE
+[01:05:12]   Date : 2026-02-21 01:05:12
+[01:05:12] =======================================================
+[01:05:12] 
+[01:05:12] ==================================================
+[01:05:12] START : Step 2 — Daily Fetch
+[01:05:12] ==================================================
+[01:05:16]   
+[01:05:16]   =======================================================
+[01:05:16]     STEP 2 — Daily Fetch -> raw_prices
+[01:05:16]     Date : 2026-02-21
+[01:05:16]   =======================================================
+[01:05:16]     ✅ Connected to crypto_tracker
+[01:05:16]   
+[01:05:16]   📥 Fetching macro signals...
+[01:05:16]     SPY return : 0.007206
+[01:05:16]     DXY return : -0.001441
+[01:05:16]     VIX        : 19.09
+[01:05:16]   
+[01:05:16]   📥 Fetching Fear & Greed...
+[01:05:16]     Fear & Greed : 8
+[01:05:16]   
+[01:05:16]   📥 Fetching BTC...
+[01:05:16]     Price  : $67,986.71
+[01:05:16]     Volume : 47,476,985,856
+[01:05:16]     ℹ️  BTC — already in raw_prices for 2026-02-21, skipping
+[01:05:16]   
+[01:05:16]   📥 Fetching ETH...
+[01:05:16]     Price  : $1,967.37
+[01:05:16]     Volume : 21,601,867,776
+[01:05:16]     ℹ️  ETH — already in raw_prices for 2026-02-21, skipping
+[01:05:16]   
+[01:05:16]   📊 raw_prices table (last 10 rows):
+[01:05:16]   
+[01:05:16]     Coin   Date                Price         Volume   F&G    VIX
+[01:05:16]     ----------------------------------------------------------
+[01:05:16]     btc    2026-02-21      68,043.89 47,235,649,536     7  19.09
+[01:05:16]     eth    2026-02-21       1,971.53 21,640,841,216     7  19.09
+[01:05:16]     btc    2026-02-20      60,911.18 40,000,000,000    50  18.50
+[01:05:16]     eth    2026-02-20       2,452.73 40,000,000,000    50  18.50
+[01:05:16]     btc    2026-02-19      61,080.77 40,000,000,000    50  18.50
+[01:05:16]     eth    2026-02-19       2,387.23 40,000,000,000    50  18.50
+[01:05:16]     btc    2026-02-18      61,672.18 40,000,000,000    50  18.50
+[01:05:16]     eth    2026-02-18       2,347.07 40,000,000,000    50  18.50
+[01:05:16]     btc    2026-02-17      63,132.23 40,000,000,000    50  18.50
+[01:05:16]     eth    2026-02-17       2,280.66 40,000,000,000    50  18.50
+[01:05:16]   
+[01:05:16]   =======================================================
+[01:05:16]     ✅ Step 2 complete!
+[01:05:16]     Next: run predict_and_store.py (Step 3)
+[01:05:16]   =======================================================
+[01:05:16] ✅ DONE : Step 2 — Daily Fetch
+
+[01:05:16] ==================================================
+[01:05:16] START : Step 3 — Predict & Store
+[01:05:16] ==================================================
+[01:05:24]   
+[01:05:24]   =======================================================
+[01:05:24]     STEP 3 — Predict → predictions table
+[01:05:24]     Prediction date : 2026-02-21
+[01:05:24]     Target date     : 2026-02-22
+[01:05:24]   =======================================================
+[01:05:24]     ✅ Connected to crypto_tracker
+[01:05:24]   
+[01:05:24]   ───────────────────────────────────────────────────────
+[01:05:24]     🔮 BTC PREDICTION
+[01:05:24]   ───────────────────────────────────────────────────────
+[01:05:24]     Loading model from: C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system\models\saved_models\btc_model.pkl
+[01:05:24]     ✅ Model loaded
+[01:05:24]   
+[01:05:24]     Building live features for BTC...
+[01:05:24]     Feature date : 2026-02-21
+[01:05:24]     Direction  : DOWN
+[01:05:24]     Confidence : 64.24%
+[01:05:24]     Prob UP    : 35.76% | Prob DOWN: 64.24%
+[01:05:24]     ℹ️  BTC — prediction already exists for 2026-02-21, skipping
+[01:05:24]   
+[01:05:24]   ───────────────────────────────────────────────────────
+[01:05:24]     🔮 ETH PREDICTION
+[01:05:24]   ───────────────────────────────────────────────────────
+[01:05:24]     Loading model from: C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system\models\saved_models\eth_model.pkl
+[01:05:24]     ✅ Model loaded
+[01:05:24]   
+[01:05:24]     Building live features for ETH...
+[01:05:24]     Feature date : 2026-02-21
+[01:05:24]     Direction  : DOWN
+[01:05:24]     Confidence : 73.97%
+[01:05:24]     Prob UP    : 26.03% | Prob DOWN: 73.97%
+[01:05:24]     ℹ️  ETH — prediction already exists for 2026-02-21, skipping
+[01:05:24]   
+[01:05:24]   📊 predictions table (last 10 rows):
+[01:05:24]   
+[01:05:24]     Coin   Pred Date    Target       Direction  Confidence  Model
+[01:05:24]     ------------------------------------------------------------
+[01:05:24]     btc    2026-02-21   2026-02-22   DOWN           59.77%     v1
+[01:05:24]     eth    2026-02-21   2026-02-22   DOWN           64.53%     v1
+[01:05:24]     btc    2026-02-19   2026-02-20   DOWN           60.70%    sim
+[01:05:24]     eth    2026-02-19   2026-02-20   DOWN           60.46%    sim
+[01:05:24]     btc    2026-02-18   2026-02-19   DOWN           67.37%    sim
+[01:05:24]     eth    2026-02-18   2026-02-19   DOWN           70.53%    sim
+[01:05:24]     btc    2026-02-17   2026-02-18   UP             65.61%    sim
+[01:05:24]     eth    2026-02-17   2026-02-18   UP             59.58%    sim
+[01:05:24]     btc    2026-02-16   2026-02-17   DOWN           62.58%    sim
+[01:05:24]     eth    2026-02-16   2026-02-17   UP             69.29%    sim
+[01:05:24]   
+[01:05:24]   =======================================================
+[01:05:24]     ✅ Step 3 complete!
+[01:05:24]     Next: run error_tracker.py (Step 4)
+[01:05:24]   =======================================================
+[01:05:24] ✅ DONE : Step 3 — Predict & Store
+
+[01:05:24] ==================================================
+[01:05:24] START : Step 4 — Error Tracker
+[01:05:24] ==================================================
+[01:05:24]   
+[01:05:24]   =======================================================
+[01:05:24]     STEP 4 — Error Tracker → errors table
+[01:05:24]     Date : 2026-02-21
+[01:05:24]   =======================================================
+[01:05:24]     ✅ Connected to crypto_tracker
+[01:05:24]   
+[01:05:24]   ───────────────────────────────────────────────────────
+[01:05:24]     📊 BTC ERROR EVALUATION
+[01:05:24]   ───────────────────────────────────────────────────────
+[01:05:24]     Pending predictions to evaluate: 0
+[01:05:24]     ℹ️  Nothing to evaluate yet for BTC
+[01:05:24]         (true price for target_date not yet in raw_prices)
+[01:05:24]   
+[01:05:24]   ───────────────────────────────────────────────────────
+[01:05:24]     📊 ETH ERROR EVALUATION
+[01:05:24]   ───────────────────────────────────────────────────────
+[01:05:24]     Pending predictions to evaluate: 0
+[01:05:24]     ℹ️  Nothing to evaluate yet for ETH
+[01:05:24]         (true price for target_date not yet in raw_prices)
+[01:05:24]   
+[01:05:24]   ───────────────────────────────────────────────────────
+[01:05:24]     Total evaluated: 0 prediction(s)
+[01:05:24]   
+[01:05:24]   📊 errors table summary:
+[01:05:24]   
+[01:05:24]     Coin    Total  Correct   Accuracy  Rolling 30d  Retrain Flags
+[01:05:24]     --------------------------------------------------------------
+[01:05:24]     btc        35       18      51.4%        60.0%             15
+[01:05:24]     eth        35       19      54.3%        60.0%             20
+[01:05:24]   
+[01:05:24]     Last 5 evaluations:
+[01:05:24]     Coin   Date           Pred   True   OK?  Roll.Acc  Retrain?
+[01:05:24]     ----------------------------------------------------------
+[01:05:25]     btc    2026-02-19     DOWN   DOWN     ✅     50.0%         🚨
+[01:05:25]     eth    2026-02-19     DOWN     UP     ❌     60.0%          
+[01:05:25]     btc    2026-02-18     DOWN   DOWN     ✅     50.0%         🚨
+[01:05:25]     eth    2026-02-18     DOWN     UP     ❌     60.0%          
+[01:05:25]     btc    2026-02-17       UP   DOWN     ❌     50.0%         🚨
+[01:05:25]     eth    2026-02-17       UP     UP     ✅     60.0%          
+[01:05:25]     btc    2026-02-16     DOWN     UP     ❌     53.3%          
+[01:05:25]     eth    2026-02-16       UP     UP     ✅     56.7%          
+[01:05:25]     btc    2026-02-15       UP     UP     ✅     50.0%         🚨
+[01:05:25]     eth    2026-02-15       UP   DOWN     ❌     56.7%          
+[01:05:25]   
+[01:05:25]   =======================================================
+[01:05:25]     ✅ Step 4 complete!
+[01:05:25]     Next: run retrain.py (Step 6) if retraining was flagged
+[01:05:25]   =======================================================
+[01:05:25] ✅ DONE : Step 4 — Error Tracker
+
+[01:05:25] ==================================================
+[01:05:25] START : Step 6 — Retrain Check
+[01:05:25] ==================================================
+[01:05:27]   
+[01:05:27]   =======================================================
+[01:05:27]     STEP 6 — Retraining Script
+[01:05:27]     Date : 2026-02-21
+[01:05:27]   =======================================================
+[01:05:27]     ✅ Connected to crypto_tracker
+[01:05:27]   
+[01:05:27]   🔍 Checking for pending retraining alerts...
+[01:05:27]     ✅ No pending alerts — all models are healthy!
+[01:05:27]   
+[01:05:27]   ───────────────────────────────────────────────────────
+[01:05:27]     📊 retraining_log summary:
+[01:05:27]   
+[01:05:27]     Coin   Triggered              Status     Acc Before  Acc After  Version
+[01:05:27]     ------------------------------------------------------------------------
+[01:05:27]     eth    2026-02-21 00:17:42.5  success           N/A      70.2% v_20260221_0034
+[01:05:27]     btc    2026-02-21 00:17:42.4  success         50.0%      73.8% v_20260221_0034
+[01:05:27]   
+[01:05:27]   =======================================================
+[01:05:27]     ✅ Step 6 complete!
+[01:05:27]     Next: set up Task Scheduler (Step 7)
+[01:05:27]   =======================================================
+[01:05:27] ✅ DONE : Step 6 — Retrain Check
+
+[01:05:27] 
+[01:05:27] =======================================================
+[01:05:27]   PIPELINE SUMMARY
+[01:05:27] =======================================================
+[01:05:27]   ✅ OK  Step 2 — Daily Fetch
+[01:05:27]   ✅ OK  Step 3 — Predict & Store
+[01:05:27]   ✅ OK  Step 4 — Error Tracker
+[01:05:27]   ✅ OK  Step 6 — Retrain Check
+[01:05:27] 
+[01:05:27]   Total time : 14s
+[01:05:27]   Log saved  : C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system\tracking\logs\pipeline_2026-02-21.log
+[01:05:27] =======================================================
