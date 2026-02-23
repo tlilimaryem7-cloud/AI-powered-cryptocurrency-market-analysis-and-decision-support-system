@@ -11,6 +11,14 @@
 #   - volatility_regime rolling(90) needs 90 days
 #   - 120 days = safe buffer for all rolling windows
 #
+# Changes vs v1:
+#   ✅ FIX — predict() now accepts an optional pre-built features
+#            Series. When passed, it skips build_live_features()
+#            entirely — no second yfinance download.
+#            For the explanation intent in chatbot.py, features
+#            are built once and shared between both calls,
+#            cutting ~3-4s of redundant API calls.
+#
 # Run    : python live_pipeline.py --coin btc
 #          python live_pipeline.py --coin eth
 # ============================================================
@@ -27,7 +35,7 @@ from datetime import datetime, timedelta
 # ─────────────────────────────────────────────────────────────
 # SETTINGS
 # ─────────────────────────────────────────────────────────────
-WARMUP_DAYS = 120          # days of history needed for rolling features
+WARMUP_DAYS = 120
 MODELS_PATH = r"C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system\models\saved_models"
 FEATURES = [
     # Trend
@@ -178,7 +186,6 @@ def build_live_features(coin: str) -> pd.Series:
     print("\n⚙️  Preprocessing...")
     df = df.sort_values("timestamp").reset_index(drop=True)
 
-    # Rounding
     df["price"]      = df["price"].round(2)
     df["volume"]     = df["volume"].round(0).astype(float)
     df["spy_return"] = df["spy_return"].round(6)
@@ -187,14 +194,10 @@ def build_live_features(coin: str) -> pd.Series:
     df["vix_change"] = df["vix_change"].round(2)
     df["fear_greed"] = df["fear_greed"].round(0)
 
-    # Forward-fill macro (weekends/holidays)
     macro_cols = ["spy_return", "dxy_return", "vix", "vix_change"]
     df[macro_cols] = df[macro_cols].ffill(limit=3)
-
-    # Forward-fill fear & greed
     df["fear_greed"] = df["fear_greed"].ffill()
 
-    # Cap vix_change — use TRAINING caps (never recompute from live data)
     df["vix_change"] = df["vix_change"].clip(
         lower=VIX_CHANGE_P01, upper=VIX_CHANGE_P99
     )
@@ -202,15 +205,12 @@ def build_live_features(coin: str) -> pd.Series:
     # ── BLOCK 7 : Feature engineering
     print("\n⚙️  Computing features...")
 
-    # Log return
     df["log_return_1d"] = np.log(df["price"] / df["price"].shift(1))
 
-    # Volatility
     df["volatility_7d"]  = df["log_return_1d"].rolling(7).std()
     df["volatility_14d"] = df["log_return_1d"].rolling(14).std()
     df["volatility_21d"] = df["log_return_1d"].rolling(21).std()
 
-    # RSI
     delta    = df["price"].diff()
     gain     = delta.clip(lower=0)
     loss     = -delta.clip(upper=0)
@@ -218,7 +218,6 @@ def build_live_features(coin: str) -> pd.Series:
     avg_loss = loss.rolling(14).mean()
     df["rsi_14"] = 100 - (100 / (1 + avg_gain / avg_loss))
 
-    # Moving averages
     for w in [7, 14, 30, 50]:
         df[f"ma_{w}"] = df["price"].rolling(w).mean()
 
@@ -226,46 +225,39 @@ def build_live_features(coin: str) -> pd.Series:
     df["price_to_ma30"] = (df["price"] - df["ma_30"]) / df["ma_30"]
     df["price_to_ma50"] = (df["price"] - df["ma_50"]) / df["ma_50"]
 
-    # MACD
-    ema_12             = df["price"].ewm(span=12, adjust=False).mean()
-    ema_26             = df["price"].ewm(span=26, adjust=False).mean()
-    df["macd"]         = ema_12 - ema_26
-    df["macd_signal"]  = df["macd"].ewm(span=9, adjust=False).mean()
+    ema_12               = df["price"].ewm(span=12, adjust=False).mean()
+    ema_26               = df["price"].ewm(span=26, adjust=False).mean()
+    df["macd"]           = ema_12 - ema_26
+    df["macd_signal"]    = df["macd"].ewm(span=9, adjust=False).mean()
     df["macd_histogram"] = df["macd"] - df["macd_signal"]
 
-    # Momentum
     df["momentum_5d"]           = df["price"].pct_change(5)
     df["momentum_10d"]          = df["price"].pct_change(10)
     df["momentum_acceleration"] = df["momentum_5d"] - df["momentum_10d"]
 
-    # Bollinger Bands
     bb_std         = df["price"].rolling(14).std()
     df["bb_width"] = (4 * bb_std) / df["ma_14"]
     df["bb_pct"]   = (df["price"] - (df["ma_14"] - 2 * bb_std)) / (4 * bb_std)
 
-    # Macro rolling
     df["spy_return_ma7"]  = df["spy_return"].rolling(7).mean()
     df["spy_return_std7"] = df["spy_return"].rolling(7).std()
     df["dxy_return_ma7"]  = df["dxy_return"].rolling(7).mean()
     df["vix_ma14"]        = df["vix"].rolling(14).mean()
     df["vix_regime"]      = (df["vix"] > 20).astype(int)
 
-    # Sentiment
     df["fear_greed_ma7"]  = df["fear_greed"].rolling(7).mean()
     df["fear_greed_lag1"] = df["fear_greed"].shift(1)
     df["fear_greed_lag7"] = df["fear_greed"].shift(7)
 
-    # Regime flags
     df["bull_bear_flag"]    = (df["price"] > df["ma_50"]).astype(int)
     vol_median              = df["volatility_21d"].rolling(90).median()
     df["volatility_regime"] = (df["volatility_21d"] > vol_median).astype(int)
 
     print("  └─ Feature engineering complete ✅")
 
-    # ── BLOCK 8 : Extract last row (today's features)
+    # ── BLOCK 8 : Extract last row
     last_row = df.dropna(subset=FEATURES).iloc[-1]
 
-    # Verify all 21 features present
     missing = [f for f in FEATURES if f not in last_row.index or pd.isna(last_row[f])]
     if missing:
         raise ValueError(f"❌ Missing features: {missing}")
@@ -281,9 +273,20 @@ def build_live_features(coin: str) -> pd.Series:
 # ─────────────────────────────────────────────────────────────
 # PREDICTION
 # ─────────────────────────────────────────────────────────────
-def predict(coin: str) -> dict:
+def predict(coin: str, features: pd.Series = None) -> dict:
     """
     Full pipeline: fetch → features → predict → return result.
+
+    FIX: accepts optional pre-built features Series.
+    When provided, skips build_live_features() entirely —
+    no second yfinance download for the explanation intent.
+
+    Parameters
+    ----------
+    coin     : str              — "btc" or "eth"
+    features : pd.Series | None — pre-built features from
+               build_live_features(). If None, builds them
+               fresh (default behaviour, unchanged).
 
     Returns
     -------
@@ -294,8 +297,11 @@ def predict(coin: str) -> dict:
     if coin not in ["btc", "eth"]:
         raise ValueError("coin must be 'btc' or 'eth'")
 
-    # Build features
-    features = build_live_features(coin)
+    # ── FIX: only build features if not already provided
+    if features is None:
+        features = build_live_features(coin)
+    else:
+        print(f"\n  ℹ️  predict() received pre-built features — skipping download ✅")
 
     # Load model
     model_path = os.path.join(MODELS_PATH, f"{coin}_model.pkl")

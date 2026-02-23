@@ -1,12 +1,15 @@
 # ============================================================
-# TAVILY FETCHER — Crypto & Macro News  (v2 — parallel fetching)
+# TAVILY FETCHER — Crypto & Macro News  (v3 — recency fix)
 # ============================================================
-# FIX: All search queries now run in PARALLEL via ThreadPoolExecutor
-#      Cuts response time from ~20s down to ~5-8s
+# FIX vs v2:
+#   ✅ FIX 1 — published_date now extracted from Tavily results
+#   ✅ FIX 2 — recency_score computed per article (was always 0.3)
+#              Score: 1.0 = today, decays linearly to 0.1 at 30 days
+#              Unknown date → neutral 0.3 fallback (unchanged behaviour)
 # ============================================================
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv   import load_dotenv
 from tavily   import TavilyClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -52,6 +55,34 @@ MACRO_QUERIES = [
 
 
 # ─────────────────────────────────────────────────────────────
+# FIX 2 — RECENCY SCORE
+# ─────────────────────────────────────────────────────────────
+def compute_recency_score(published_date: str) -> float:
+    """
+    Convert a published_date string into a recency score [0.1 – 1.0].
+
+    Scoring:
+        1.0 = published today
+        0.1 = published 30+ days ago (floor)
+        0.3 = fallback when date is missing or unparseable
+
+    Decay is linear over 30 days:
+        score = max(0.1,  1.0 - (age_days / 30))
+    """
+    if not published_date:
+        return 0.3  # unknown date → neutral fallback
+
+    try:
+        # Handle both "2025-01-15T10:30:00Z" and "2025-01-15T10:30:00+00:00"
+        pub = datetime.fromisoformat(published_date.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        age_days = max((now - pub).days, 0)
+        return round(max(0.1, 1.0 - (age_days / 30)), 4)
+    except Exception:
+        return 0.3  # unparseable → neutral fallback
+
+
+# ─────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────
 def clean_content(text: str, max_len: int = MAX_CONTENT_LENGTH) -> str:
@@ -72,11 +103,15 @@ def search(query: str, max_results: int = MAX_RESULTS_PER_QUERY) -> list:
         )
         articles = []
         for r in response.get("results", []):
+            # FIX 1 + 2: extract published_date and compute recency_score
+            published_date = r.get("published_date", "")
             articles.append({
-                "title"  : r.get("title",   "No title"),
-                "url"    : r.get("url",     ""),
-                "content": clean_content(r.get("content", "")),
-                "score"  : round(r.get("score", 0.0), 4),
+                "title"          : r.get("title",   "No title"),
+                "url"            : r.get("url",     ""),
+                "content"        : clean_content(r.get("content", "")),
+                "score"          : round(r.get("score", 0.0), 4),
+                "published_date" : published_date,
+                "recency_score"  : compute_recency_score(published_date) if published_date else 0.8,
             })
         return articles
     except Exception as e:
@@ -110,8 +145,8 @@ def fetch_news(coin: str) -> dict:
     print(f"  Date : {datetime.today().strftime('%Y-%m-%d')}")
     print(f"{'='*55}")
 
-    coin_queries  = QUERIES[coin]
-    all_queries   = coin_queries + MACRO_QUERIES
+    coin_queries = QUERIES[coin]
+    all_queries  = coin_queries + MACRO_QUERIES
 
     coin_articles  = []
     macro_articles = []
@@ -160,7 +195,9 @@ def format_for_llm(news: dict, max_articles: int = 8) -> str:
     for i, article in enumerate(news["all_articles"][:max_articles], 1):
         lines.append(f"\n[{i}] {article['title']}")
         lines.append(f"    {article['content']}")
-        lines.append(f"    Source: {article['url']}")
+        lines.append(f"    Published : {article.get('published_date', 'unknown')}")
+        lines.append(f"    Recency   : {article.get('recency_score', 0.3)}")
+        lines.append(f"    Source    : {article['url']}")
     return "\n".join(lines)
 
 

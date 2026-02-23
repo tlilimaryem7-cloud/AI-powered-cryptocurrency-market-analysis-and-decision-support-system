@@ -1,10 +1,13 @@
 # ============================================================
-# RAG — Lightweight Retrieval Augmented Generation (v3)
+# RAG — Lightweight Retrieval Augmented Generation (v4)
 # ============================================================
-# Improvements over v2:
-#   + Crypto relevance filter — articles with no crypto
-#     keywords are rejected before scoring. Prevents off-topic
-#     articles (e.g. mortgage rates) from being selected.
+# Changes vs v3:
+#   ✅ FIX 1 — MIN_SCORE raised from 0.05 → 0.15
+#              (v3 threshold was effectively useless — every article
+#               passed because recency alone guaranteed >= 0.06)
+#   ✅ FIX 2 — keyword_boost() now accepts coin="both" or coin=None
+#              for market_overview intent. Previously hardcoded to
+#              "btc", causing ETH articles to be penalized unfairly.
 # ============================================================
 
 import re
@@ -16,7 +19,7 @@ from collections import Counter
 # SETTINGS
 # ─────────────────────────────────────────────────────────────
 TOP_N_ARTICLES = 6
-MIN_SCORE      = 0.05
+MIN_SCORE      = 0.15   # FIX 1: raised from 0.05 (was useless before recency fix)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -104,16 +107,34 @@ def keyword_boost(article: dict, coin: str) -> float:
     """
     Coin-specific boost + macro boost only if coin also present.
     Max boost capped at 0.25.
+
+    FIX 2: coin can now be "both" or None (used for market_overview intent).
+    In that case, keywords from ALL coins are checked so neither BTC
+    nor ETH articles are penalized.
     """
-    text      = (article["title"] + " " + article["content"]).lower()
-    boost     = 0.0
+    text  = (article["title"] + " " + article["content"]).lower()
+    boost = 0.0
+
+    # FIX 2: determine which coin keyword sets to check
+    if coin is None or coin == "both":
+        coins_to_check = list(COIN_KEYWORDS.keys())   # ["btc", "eth"]
+    else:
+        coins_to_check = [coin.lower()]
 
     # Coin-specific boost
-    coin_hits = sum(1 for kw in COIN_KEYWORDS.get(coin.lower(), []) if kw in text)
-    boost    += min(coin_hits * 0.03, 0.15)
+    coin_hits = sum(
+        1 for c in coins_to_check
+        for kw in COIN_KEYWORDS.get(c, [])
+        if kw in text
+    )
+    boost += min(coin_hits * 0.03, 0.15)
 
-    # Macro boost — only if coin also present
-    coin_present = any(kw in text for kw in COIN_KEYWORDS.get(coin.lower(), []))
+    # Macro boost — only if at least one coin keyword is present
+    coin_present = any(
+        kw in text
+        for c in coins_to_check
+        for kw in COIN_KEYWORDS.get(c, [])
+    )
     if coin_present:
         macro_hits = sum(1 for kw in MACRO_KEYWORDS if kw in text)
         boost     += min(macro_hits * 0.02, 0.10)
@@ -137,10 +158,10 @@ def retrieve(question: str, articles: list, coin: str,
 
     Parameters
     ----------
-    question : str  — user's question
-    articles : list — output of fetch_news()["all_articles"]
-    coin     : str  — "btc" or "eth"
-    top_n    : int  — number of articles to return
+    question : str        — user's question
+    articles : list       — output of fetch_news()["all_articles"]
+    coin     : str|None   — "btc", "eth", "both", or None
+    top_n    : int        — number of articles to return
 
     Returns
     -------
@@ -174,7 +195,7 @@ def retrieve(question: str, articles: list, coin: str,
         doc_vec   = tfidf_vector(article_texts[i], idf)
         tfidf_sim = cosine_similarity(query_vec, doc_vec)
         kw_boost  = keyword_boost(article, coin)
-        recency   = article.get("recency_score", 0.3)
+        recency   = article.get("recency_score", 0.3)   # now a real value from tavily_fetcher
         tavily_sc = article.get("score", 0.0)
 
         final_score = (
@@ -197,7 +218,7 @@ def retrieve(question: str, articles: list, coin: str,
 
     # ── Sort and filter
     scored = sorted(scored, key=lambda x: x["relevance_score"], reverse=True)
-    scored = [a for a in scored if a["relevance_score"] >= MIN_SCORE]
+    scored = [a for a in scored if a["relevance_score"] >= MIN_SCORE]  # FIX 1
 
     return scored[:top_n]
 

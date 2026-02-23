@@ -1,16 +1,18 @@
 # ============================================================
-# CHATBOT — Intent Detection + Routing  (v2 — all fixes)
+# CHATBOT — Intent Detection + Routing  (v3 — all fixes)
 # ============================================================
-# Changes vs v1:
-#   ✅ FIX 1 — Greeting detection (hello/hi/hey no longer blocked)
-#   ✅ FIX 2 — News formatting: numbered points forced onto new lines
-#   ✅ FIX 3 — factual_crypto as 6th intent (no ML/news pipeline)
-#   ✅ FIX 4 — User question always injected into system prompt
+# Changes vs v2:
+#   ✅ FIX 1 — LLM-based intent + coin detection replaces regex
+#              Handles natural phrasing, no order sensitivity
+#              Regex kept as fallback if Groq call fails
+#   ✅ FIX 2 — market_overview now passes coin="both" to retrieve()
+#              (was hardcoded "btc" — penalized ETH articles unfairly)
 # ============================================================
 
 import sys
 import os
 import re
+import json
 
 # ─────────────────────────────────────────────────────────────
 # PATH SETUP
@@ -38,7 +40,7 @@ TEMPERATURE = 0.3
 
 
 # ═══════════════════════════════════════════════════════════════
-# FIX 1 — GREETING and followup DETECTION
+# GREETING DETECTION
 # ═══════════════════════════════════════════════════════════════
 
 GREETINGS = [
@@ -50,7 +52,6 @@ GREETINGS = [
 def is_greeting(question: str) -> bool:
     """Return True if the message is a greeting with no crypto content."""
     q = question.lower().strip().rstrip("!.,?")
-    # Exact match or starts-with match on short messages
     if q in GREETINGS:
         return True
     for g in GREETINGS:
@@ -58,6 +59,10 @@ def is_greeting(question: str) -> bool:
             return True
     return False
 
+
+# ═══════════════════════════════════════════════════════════════
+# FOLLOWUP DETECTION
+# ═══════════════════════════════════════════════════════════════
 
 FOLLOWUP_PATTERNS = [
     r"^why (do you|did you|is that|so)",
@@ -83,9 +88,81 @@ def is_followup(question: str) -> bool:
             return True
     return False
 
+
 # ═══════════════════════════════════════════════════════════════
-# INTENT DETECTION
+# FIX 1 — LLM-BASED INTENT + COIN DETECTION (with regex fallback)
 # ═══════════════════════════════════════════════════════════════
+
+INTENT_CLASSIFIER_PROMPT = """You are an intent classifier for a cryptocurrency chatbot.
+Classify the user's message into EXACTLY ONE intent and detect the coin.
+
+INTENTS:
+- prediction       → asking about future price direction (will BTC go up?, price target, forecast, give me the BTC price)
+- explanation      → asking WHY price is moving (why is ETH dropping?, what caused the rally?)
+- market_overview  → general market state (what's happening in crypto?, latest news, market update)
+- investment_advice → buy/sell/hold decisions (should I buy BTC?, good time to invest?)
+- factual_crypto   → definitions, concepts, rankings (what is DeFi?, top 10 coins, how does staking work?)
+- off_topic        → completely unrelated to crypto
+
+COINS:
+- btc   → user mentions Bitcoin or BTC
+- eth   → user mentions Ethereum or ETH
+- both  → user mentions both
+- null  → no specific coin mentioned
+
+Return ONLY valid JSON with no explanation, no markdown, no extra text:
+{"intent": "<intent>", "coin": "<coin>"}"""
+
+
+def detect_intent_llm(question: str) -> tuple:
+    """
+    Use LLaMA to classify intent and coin.
+    Fast call: max_tokens=30, temperature=0.0 (deterministic).
+    Falls back to regex if the Groq call fails for any reason.
+    """
+    try:
+        response = client.chat.completions.create(
+            model    = MODEL,
+            messages = [
+                {"role": "system", "content": INTENT_CLASSIFIER_PROMPT},
+                {"role": "user",   "content": question},
+            ],
+            max_tokens  = 30,
+            temperature = 0.0,
+        )
+        raw = response.choices[0].message.content.strip()
+
+        # Strip markdown fences if the LLM adds them despite instructions
+        raw = re.sub(r"```(?:json)?|```", "", raw).strip()
+
+        result = json.loads(raw)
+        intent = result.get("intent", "market_overview")
+        coin   = result.get("coin", None)
+
+        # Normalise coin
+        if coin in ("null", "", None):
+            coin = None
+
+        # Validate intent — reject anything unexpected
+        valid_intents = {
+            "prediction", "explanation", "market_overview",
+            "investment_advice", "factual_crypto", "off_topic"
+        }
+        if intent not in valid_intents:
+            print(f"  ⚠️  LLM returned unknown intent '{intent}', falling back to regex")
+            return _detect_intent_regex(question), detect_coin(question)
+
+        print(f"  → LLM intent: {intent} | coin: {coin}")
+        return intent, coin
+
+    except Exception as e:
+        print(f"  ⚠️  LLM intent detection failed ({e}), falling back to regex")
+        return _detect_intent_regex(question), detect_coin(question)
+
+
+# ─────────────────────────────────────────────────────────────
+# REGEX FALLBACK (kept intact from v2)
+# ─────────────────────────────────────────────────────────────
 
 INTENT_PATTERNS = {
     "prediction": [
@@ -106,7 +183,6 @@ INTENT_PATTERNS = {
         r"\bbehind\b.*(move|drop|pump|crash|rally)",
         r"reason.*(price|market)",
     ],
-    # FIX 3 — factual_crypto checked BEFORE market_overview to avoid swallowing
     "factual_crypto": [
         r"top \d+ coin",
         r"best coin",
@@ -147,7 +223,6 @@ INTENT_PATTERNS = {
         r"where to (buy|trade|sell).*(btc|eth|bitcoin|ethereum|crypto)",
         r"index of (cryptocurrencies|coins|tokens)",
         r"cryptocurrency (index|list|ranking|marketcap)",
-        
     ],
     "market_overview": [
         r"what.*(happening|going on).*(crypto|market|btc|eth|bitcoin|ethereum|news|update|today|situation|status)",
@@ -205,11 +280,11 @@ def is_crypto_related(question: str) -> bool:
     return any(kw in q for kw in CRYPTO_CONTEXT_KEYWORDS)
 
 
-def detect_intent(question: str) -> str:
+def _detect_intent_regex(question: str) -> str:
+    """Original regex intent detection — used as fallback only."""
     if not is_crypto_related(question):
         return "off_topic"
     q = question.lower()
-    # FIX 3: factual_crypto checked before market_overview
     for intent in ["prediction", "explanation", "factual_crypto",
                    "market_overview", "investment_advice"]:
         for pattern in INTENT_PATTERNS[intent]:
@@ -219,18 +294,17 @@ def detect_intent(question: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
-# FIX 2 — POST-PROCESSOR: force numbered points onto new lines
+# POST-PROCESSOR: force numbered points onto new lines
 # ═══════════════════════════════════════════════════════════════
 
 def format_llm_response(text: str) -> str:
     """
     Ensure numbered list items (1. 2. 3. ...) are each on their own line.
-    This fixes cases where the LLM writes them inline as a paragraph.
     """
-    # Insert newline before every "N." that follows non-newline content
     text = re.sub(r'(?<!\n)\s*(\d+\.)\s+', r'\n\1 ', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
+
 
 # ═══════════════════════════════════════════════════════════════
 # PROMPT TEMPLATES
@@ -240,12 +314,11 @@ SYSTEM_BASE = """You are a professional cryptocurrency market analyst.
 You ONLY answer questions about Bitcoin (BTC), Ethereum (ETH), and crypto markets.
 You are factual, data-driven, and concise.
 Never guarantee profits or promise returns.
-Always end with: ⚠️ This is not financial advice."""
+Always end with: ⚠️ This is not afinancial advice."""
 
 
 PROMPTS = {
 
-    # ── PREDICTION ──────────────────────────────────────────
     "prediction": SYSTEM_BASE + """
 
 For prediction questions, structure your response as:
@@ -257,12 +330,11 @@ For prediction questions, structure your response as:
 ✅ Bullish Signals: factors supporting an upward move (max 2-3 bullet points).
 ⚠️ Risk Factors: factors that could invalidate the prediction (max 2-3 bullet points).
 🎯 Short-Term Outlook: 1-2 sentence conclusion based on ML signal + news combined.
-⚠️ This is not financial advice.
+⚠️ This is not a financial advice.
 
 Keep total response under 280 words. Be specific — use numbers and percentages from the data.
 CRITICAL: Your response must directly and specifically answer the user's question below.""",
 
-    # ── EXPLANATION ─────────────────────────────────────────
     "explanation": SYSTEM_BASE + """
 
 For explanation questions, structure your response as:
@@ -271,12 +343,11 @@ For explanation questions, structure your response as:
 📊 Technical Picture: what the model features tell us (RSI, momentum, volatility, macro signals).
 🔗 Connections: how the news and technical signals relate to each other.
 💡 Summary: 1 sentence takeaway.
-⚠️ This is not financial advice.
+⚠️ This is not afinancial advice.
 
 Keep total response under 280 words. Prioritize explaining the cause, not the prediction.
 CRITICAL: Your response must directly and specifically answer the user's question below.""",
 
-    # ── MARKET OVERVIEW ─────────────────────────────────────
     "market_overview": SYSTEM_BASE + """
 
 For market overview questions, structure your response as:
@@ -287,12 +358,11 @@ For market overview questions, structure your response as:
 3. Third story here.
 📊 Sentiment: what Fear & Greed and macro signals are indicating.
 🔮 Near-Term Factors to Watch: 2-3 key events or indicators to monitor.
-⚠️ This is not financial advice.
+⚠️ This is not afinancial advice.
 
 Keep total response under 280 words. Focus on breadth — cover both BTC, ETH, and macro context.
 CRITICAL: Your response must directly and specifically answer the user's question below.""",
 
-    # ── INVESTMENT ADVICE ───────────────────────────────────
     "investment_advice": SYSTEM_BASE + """
 
 For investment advice questions, structure your response as:
@@ -301,12 +371,11 @@ For investment advice questions, structure your response as:
 ✅ Arguments For: data-backed reasons supporting the action (max 3).
 ⚠️ Arguments Against: data-backed risks that argue against the action (max 3).
 🎯 Neutral Assessment: a balanced 1-2 sentence view based purely on the data.
-⚠️ This is not financial advice. Always do your own research and consider your risk tolerance.
+⚠️ This is not a financial advice. Always do your own research and consider your risk tolerance.
 
 Keep total response under 300 words. Stay neutral — never recommend a specific action.
 CRITICAL: Your response must directly and specifically answer the user's question below.""",
 
-    # ── FIX 3: FACTUAL CRYPTO ───────────────────────────────
     "factual_crypto": SYSTEM_BASE + """
 
 For factual crypto knowledge questions, answer directly and clearly without a fixed structure.
@@ -315,7 +384,7 @@ For factual crypto knowledge questions, answer directly and clearly without a fi
 - If listing items (e.g. top 5 coins), use a numbered list with one item per line
 - Be specific, accurate, and concise
 - Keep the response under 200 words
-⚠️ This is not financial advice.
+⚠️ This is not a financial advice.
 
 CRITICAL: Your response must directly and specifically answer the user's question below.""",
 }
@@ -349,7 +418,6 @@ def build_context(intent: str, coin: str | None,
                   history: list = None) -> str:
     lines = []
 
-    # Inject conversation history for follow-up questions
     if history:
         lines += [
             "=" * 50,
@@ -415,7 +483,7 @@ def build_context(intent: str, coin: str | None,
 
 
 # ═══════════════════════════════════════════════════════════════
-# LLM CALL — FIX 4: user question injected into system prompt
+# LLM CALL
 # ═══════════════════════════════════════════════════════════════
 
 def build_user_prompt(question: str, context: str) -> str:
@@ -438,13 +506,10 @@ def call_llm(intent: str, question: str, context: str, history: list = None) -> 
     )
     user_prompt = build_user_prompt(question, context)
 
-    # Build messages: system + last 6 history turns + current user message
     messages = [{"role": "system", "content": system_prompt}]
-
     for msg in history[-6:]:
         role = "assistant" if msg["role"] == "assistant" else "user"
         messages.append({"role": role, "content": msg["content"]})
-
     messages.append({"role": "user", "content": user_prompt})
 
     try:
@@ -469,17 +534,6 @@ def chat(question: str, history: list = None) -> dict:
     if history is None:
         history = []
 
-    """
-    Main entry point for the chatbot.
-
-    1. Check greeting → short-circuit immediately
-    2. Detect intent + coin
-    3. Block off-topic
-    4. Route to the right pipeline
-    5. Build context
-    6. Call LLM with correct prompt (question always injected)
-    7. Return structured result
-    """
     from news.tavily_fetcher import fetch_news
     from news.rag            import retrieve
     from live_pipeline       import predict, build_live_features
@@ -489,7 +543,7 @@ def chat(question: str, history: list = None) -> dict:
     print(f"{'='*60}")
     print(f"  Question : {question}")
 
-    # ── FIX 1: Greeting short-circuit
+    # ── Greeting short-circuit (before any LLM call)
     if is_greeting(question):
         print("  → Greeting detected ✅")
         return {
@@ -509,18 +563,15 @@ def chat(question: str, history: list = None) -> dict:
             ),
         }
 
-    # ── Intent + coin detection
-    intent = detect_intent(question)
-    coin   = detect_coin(question)
+    # ── FIX 1: LLM-based intent + coin detection (regex fallback inside)
+    intent, coin = detect_intent_llm(question)
 
     print(f"  Intent   : {intent}")
     print(f"  Coin     : {coin if coin else 'not specified'}")
 
     # ── Block off-topic
     if intent == "off_topic":
-        # Check if it's a follow-up to a previous crypto conversation
         if history and is_followup(question):
-            # Inherit last known intent and coin from history context
             intent = "explanation"
             print("  → Follow-up detected, routing to explanation ✅")
         else:
@@ -538,9 +589,9 @@ def chat(question: str, history: list = None) -> dict:
     if coin is None and intent in ["prediction", "investment_advice", "explanation"]:
         coin = "btc"
         print("  → No coin detected, defaulting to BTC")
-    if coin == "both":
+    if coin == "both" and intent in ["prediction", "investment_advice", "explanation"]:
         coin = "btc"
-        print("  → Both coins detected, defaulting to BTC")
+        print("  → Both coins detected, defaulting to BTC for single-coin intents")
 
     prediction    = None
     live_features = None
@@ -560,22 +611,18 @@ def chat(question: str, history: list = None) -> dict:
             features_series = build_live_features(coin if coin else "btc")
             live_features   = features_series.to_dict()
 
-            # ── NEW: fetch prediction to detect contradiction
-            prediction = predict(coin if coin else "btc")
-            pred_dir   = prediction["direction"]  # "UP" or "DOWN"
+            prediction = predict(coin if coin else "btc", features=features_series)
+            pred_dir   = prediction["direction"]
             q_lower    = question.lower()
 
-            # Detect if user asks about a direction that contradicts the model
             asks_rising  = any(w in q_lower for w in ["rising", "going up", "pumping", "rally", "surge"])
             asks_falling = any(w in q_lower for w in ["falling", "going down", "dropping", "crashing", "dump"])
-
             contradiction = (asks_rising and "DOWN" in pred_dir) or (asks_falling and "UP" in pred_dir)
 
             print("\n⚙️  Fetching news...")
             news     = fetch_news(coin if coin else "btc")
             articles = retrieve(question, news["all_articles"], coin if coin else "btc")
 
-            # ── NEW: if contradiction, override the question for the LLM
             if contradiction:
                 actual_move = "falling" if "DOWN" in pred_dir else "rising"
                 question = (
@@ -594,7 +641,8 @@ def chat(question: str, history: list = None) -> dict:
                 if a["url"] not in seen:
                     seen.add(a["url"])
                     deduped.append(a)
-            articles = retrieve(question, deduped, "btc", top_n=8)
+            # FIX 2: pass "both" so ETH articles are not penalized in keyword_boost
+            articles = retrieve(question, deduped, "both", top_n=8)
 
         elif intent == "investment_advice":
             print("\n⚙️  Running ML prediction for investment context...")
@@ -604,7 +652,6 @@ def chat(question: str, history: list = None) -> dict:
             articles = retrieve(question, news["all_articles"], coin)
 
         elif intent == "factual_crypto":
-            # FIX 3: No ML, no Tavily — LLM answers from its own knowledge
             print("\n⚙️  Factual question — skipping ML & news pipeline")
             articles      = []
             prediction    = None
@@ -629,7 +676,7 @@ def chat(question: str, history: list = None) -> dict:
         prediction    = prediction,
         articles      = articles,
         live_features = live_features,
-        history       = history,  
+        history       = history,
     )
 
     print("\n⚙️  Calling LLM...")
@@ -673,10 +720,12 @@ def display_result(result: dict):
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  🤖 CRYPTO ANALYST CHATBOT  (v2)")
+    print("  🤖 CRYPTO ANALYST CHATBOT  (v3)")
     print("  Powered by ML prediction + live news + LLaMA 3.3 70B")
     print("  Type 'exit' or 'quit' to stop")
     print("="*60)
+
+    conversation_history = []
 
     while True:
         try:
@@ -691,5 +740,9 @@ if __name__ == "__main__":
             print("\n👋 Goodbye!")
             break
 
-        result = chat(question)
+        result = chat(question, history=conversation_history)
         display_result(result)
+
+        # Maintain conversation history for follow-up detection
+        conversation_history.append({"role": "user",      "content": question})
+        conversation_history.append({"role": "assistant", "content": result["analysis"]})
