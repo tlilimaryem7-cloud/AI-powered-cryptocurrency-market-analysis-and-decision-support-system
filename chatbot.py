@@ -114,17 +114,26 @@ Return ONLY valid JSON with no explanation, no markdown, no extra text:
 {"intent": "<intent>", "coin": "<coin>"}"""
 
 
-def detect_intent_llm(question: str) -> tuple:
-    """
-    Use LLaMA to classify intent and coin.
-    Fast call: max_tokens=30, temperature=0.0 (deterministic).
-    Falls back to regex if the Groq call fails for any reason.
-    """
+def detect_intent_llm(question: str, history: list = None) -> tuple:
     try:
+        # Add previous question as context hint for follow-up questions
+        context_hint = ""
+        if history:
+            last_user_msg = next(
+                (m["content"] for m in reversed(history) if m["role"] == "user"),
+                None
+            )
+            if last_user_msg:
+                 context_hint = (
+                    f"\nIMPORTANT: The previous user message was: '{last_user_msg}'. "
+                    f"If the current message is a follow-up with no crypto keywords, "
+                    f"inherit the intent from the previous message instead of returning off_topic or factual_crypto."
+                )
+
         response = client.chat.completions.create(
             model    = MODEL,
             messages = [
-                {"role": "system", "content": INTENT_CLASSIFIER_PROMPT},
+                {"role": "system", "content": INTENT_CLASSIFIER_PROMPT + context_hint},
                 {"role": "user",   "content": question},
             ],
             max_tokens  = 30,
@@ -564,7 +573,7 @@ def chat(question: str, history: list = None) -> dict:
         }
 
     # ── FIX 1: LLM-based intent + coin detection (regex fallback inside)
-    intent, coin = detect_intent_llm(question)
+    intent, coin = detect_intent_llm(question, history)
 
     print(f"  Intent   : {intent}")
     print(f"  Coin     : {coin if coin else 'not specified'}")

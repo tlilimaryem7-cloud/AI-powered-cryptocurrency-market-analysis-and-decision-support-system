@@ -3,6 +3,15 @@
 # ============================================================
 # Run : streamlit run app.py
 # ============================================================
+# UI Changes vs previous version:
+#   ✅ FIX 1 — Chat auto-scrolls to latest message
+#   ✅ FIX 2 — Quick questions show "thinking" bubble instantly
+#   ✅ FIX 3 — Chat bubbles show timestamps
+#   ✅ FIX 4 — Bot response sections visually separated
+#   ✅ FIX 5 — Button hover has background shift + lift effect
+#   ✅ FIX 6 — Coin switch clears chat history
+#   ✅ FIX 7 — Footer shortened to one line
+# ============================================================
 
 import sys
 import os
@@ -161,13 +170,20 @@ st.markdown(f"""
   .sig-value  {{ font-size:1.1rem; font-weight:700; }}
   .sig-interp {{ font-size:0.72rem; margin-top:3px; }}
 
-  /* Streamlit buttons */
+  /* FIX 5 — Button hover with background shift + lift */
   .stButton > button {{
     background:{NAVY2} !important; border:1px solid {BORDER} !important;
     color:{TEXT} !important; border-radius:8px !important;
-    font-size:0.82rem !important; transition:all 0.2s !important;
+    font-size:0.82rem !important;
+    transition:all 0.2s ease !important;
   }}
-  .stButton > button:hover {{ border-color:{BTC} !important; color:{BTC} !important; }}
+  .stButton > button:hover {{
+    border-color:{BTC} !important;
+    color:{BTC} !important;
+    background:rgba(247,147,26,0.08) !important;
+    transform:translateY(-1px) !important;
+    box-shadow:0 4px 12px rgba(247,147,26,0.15) !important;
+  }}
 
   /* Inputs / selects */
   div[data-testid="stTextInput"] input {{
@@ -188,6 +204,7 @@ st.markdown(f"""
     background:{NAVY}; border:1px solid {BORDER}; border-radius:14px;
     padding:18px; min-height:320px; max-height:420px;
     overflow-y:auto; margin-bottom:18px;
+    scroll-behavior:smooth;
   }}
   .chat-bubble-user {{
     background:linear-gradient(135deg,#1e40af,#2563eb);
@@ -203,6 +220,52 @@ st.markdown(f"""
     max-width:82%; font-size:0.875rem;
     line-height:1.65; word-break:break-word;
   }}
+
+  /* FIX 4 — Bot response section headers visually separated */
+  .chat-bubble-bot strong {{
+    display:block;
+    margin-top:10px;
+    margin-bottom:2px;
+    color:#c8d8f0;
+    font-size:0.88rem;
+  }}
+  .chat-bubble-bot strong:first-child {{
+    margin-top:0;
+  }}
+
+  /* FIX 3 — Timestamps */
+  .bubble-ts {{
+    font-size:0.62rem;
+    color:{MUTED};
+    margin-top:4px;
+    opacity:0.7;
+  }}
+  .bubble-ts-user {{
+    text-align:right;
+  }}
+
+  /* Thinking bubble */
+  .chat-bubble-thinking {{
+    background:{NAVY3}; border:1px solid {BORDER};
+    border-radius:16px 16px 16px 4px;
+    padding:12px 16px; margin:8px 0;
+    max-width:82%; font-size:0.875rem;
+    color:{MUTED}; font-style:italic;
+    display:flex; align-items:center; gap:8px;
+  }}
+  .thinking-dots span {{
+    display:inline-block;
+    width:6px; height:6px; border-radius:50%;
+    background:{MUTED};
+    animation:blink 1.4s infinite both;
+  }}
+  .thinking-dots span:nth-child(2) {{ animation-delay:0.2s; }}
+  .thinking-dots span:nth-child(3) {{ animation-delay:0.4s; }}
+  @keyframes blink {{
+    0%,80%,100% {{ opacity:0.2; transform:scale(0.8); }}
+    40% {{ opacity:1; transform:scale(1); }}
+  }}
+
   .chat-empty-state {{
     display:flex; flex-direction:column; align-items:center;
     justify-content:center; min-height:260px;
@@ -234,7 +297,6 @@ def hex_rgba(h, a=0.1):
     return f"rgba({r},{g},{b},{a})"
 
 def tt(label, tip):
-    """Always assign result to a variable before embedding in f-strings."""
     return (f'<span class="tt">{label}'
             f'<span class="ii">i</span>'
             f'<span class="tip">{tip}</span></span>')
@@ -323,6 +385,33 @@ def period_dd(key, default="90D"):
                         index=list(opts.keys()).index(default),
                         key=f"dd_{key}", label_visibility="collapsed")
     return opts[sel]
+
+# FIX 3 — Chat bubble builder with timestamps
+def build_bubbles(history: list) -> str:
+    """Render chat history as HTML bubbles with timestamps."""
+    parts = []
+    for msg in history:
+        ts = msg.get("ts", "")
+        if msg["role"] == "user":
+            parts.append(
+                f'<div class="chat-bubble-user">{msg["content"]}</div>'
+                f'<div class="bubble-ts bubble-ts-user">{ts}</div>'
+            )
+        elif msg.get("thinking"):
+            # FIX 2 — Thinking bubble
+            parts.append(
+                f'<div class="chat-bubble-thinking">'
+                f'⏳ Analyzing market data&nbsp;'
+                f'<span class="thinking-dots">'
+                f'<span></span><span></span><span></span>'
+                f'</span></div>'
+            )
+        else:
+            parts.append(
+                f'<div class="chat-bubble-bot">{md_to_html(msg["content"])}</div>'
+                f'<div class="bubble-ts">{ts}</div>'
+            )
+    return "".join(parts)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -493,7 +582,7 @@ def smart_refresh():
 # ─────────────────────────────────────────────────────────────
 # SESSION STATE
 # ─────────────────────────────────────────────────────────────
-for k, v in {"coin":"btc","chat_history":[],"preds":{}}.items():
+for k, v in {"coin":"btc","chat_history":[],"preds":{},"clear_chat_input":False}.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -528,7 +617,7 @@ last_upd = datetime.fromtimestamp(
 
 
 # ─────────────────────────────────────────────────────────────
-# PRE-COMPUTE ALL TOOLTIPS  (never call tt() inside f-strings)
+# PRE-COMPUTE ALL TOOLTIPS
 # ─────────────────────────────────────────────────────────────
 tt_conviction = tt("AI Conviction",
     "How strongly the model signals align. "
@@ -562,15 +651,20 @@ with n1:
 with n2:
     ca, cb = st.columns(2)
     with ca:
+        # FIX 6 — clear chat history on coin switch
         if st.button("₿  Bitcoin",  key="nav_btc",
                      type="primary" if coin=="btc" else "secondary",
                      use_container_width=True):
-            st.session_state.coin = "btc"; st.rerun()
+            st.session_state.coin = "btc"
+            st.session_state.chat_history = []
+            st.rerun()
     with cb:
         if st.button("Ξ  Ethereum", key="nav_eth",
                      type="primary" if coin=="eth" else "secondary",
                      use_container_width=True):
-            st.session_state.coin = "eth"; st.rerun()
+            st.session_state.coin = "eth"
+            st.session_state.chat_history = []
+            st.rerun()
 with n3:
     price_now = float(feat_live["price"])
     st.markdown(
@@ -745,11 +839,7 @@ with rc2:
 
 
 # ═════════════════════════════════════════════════════════════
-# 💬 AI ANALYST — CLASSIC CHATBOT SECTION
-# Simple, reliable, fully in Streamlit's normal flow:
-#   • Message history rendered as HTML bubbles
-#   • 6 quick-question buttons in 2 rows of 3
-#   • Text input + Send button + Clear button
+# 💬 AI ANALYST
 # ═════════════════════════════════════════════════════════════
 st.markdown('<div class="section-title">💬 AI Analyst</div>', unsafe_allow_html=True)
 
@@ -758,8 +848,9 @@ QUICK_QS = [
     ("Ξ ETH tomorrow?",    "What will Ethereum do tomorrow?"),
     ("⚠️ Main risks?",      f"What are the main risks for {name} today?"),
     ("🌍 Market overview?", "Give me a full crypto market overview"),
-    ("📉 Why falling?",  f"Why is {name} falling today?") if is_up else ("📈 Why rising?", f"Why is {name} rising today?"),
-    ("📈 Why rising?",   f"Why is {name} rising today?") if is_up else ("📉 Why falling?", f"Why is {name} falling today?"),
+    ("📉 Why dropping?" if not is_up else "📈 Why rising?",
+     f"Why is {name} {'dropping' if not is_up else 'rising'} today?"),
+    ("💰 Should I buy?",    f"Should I buy {name} now?"),
 ]
 
 with st.container():
@@ -767,13 +858,18 @@ with st.container():
 
     # ── 1. Message history ──
     if st.session_state.chat_history:
-        bubbles = "".join(
-            f'<div class="chat-bubble-user">{m["content"]}</div>'
-            if m["role"] == "user"
-            else f'<div class="chat-bubble-bot">{md_to_html(m["content"])}</div>'
-            for m in st.session_state.chat_history
-        )
-        st.markdown(f'<div class="chat-history">{bubbles}</div>', unsafe_allow_html=True)
+        bubbles = build_bubbles(st.session_state.chat_history)
+        st.markdown(
+            f'<div class="chat-history" id="chat-history-box">{bubbles}</div>',
+            unsafe_allow_html=True)
+
+        # FIX 1 — Auto-scroll to bottom
+        st.markdown("""
+        <script>
+          const chatBox = document.getElementById('chat-history-box');
+          if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+        </script>
+        """, unsafe_allow_html=True)
     else:
         st.markdown(
             f'<div class="chat-history">'
@@ -784,8 +880,11 @@ with st.container():
             f'<div>Ask me anything about {name} or the crypto market.</div>'
             f'</div></div>',
             unsafe_allow_html=True)
-        
-        # ── 2. Text input + Send + Clear ──
+
+    # ── 2. Text input + Send + Clear ──
+    if st.session_state.get("clear_chat_input"):
+        st.session_state.chat_input = ""
+        st.session_state.clear_chat_input = False
     inp_col, send_col, clear_col = st.columns([7, 1, 1])
 
     with inp_col:
@@ -815,37 +914,54 @@ with st.container():
         for i, (lbl, question) in enumerate(QUICK_QS):
             with all_q_cols[i]:
                 if st.button(lbl, key=f"qq_{i}", use_container_width=True):
-                    st.session_state.chat_history.append({"role": "user", "content": question})
-                    with st.spinner("Analyzing…"):
-                        result = chat(question, history=st.session_state.chat_history[:-1])
-                    st.session_state.chat_history.append({"role": "assistant", "content": result["analysis"]})
+                    ts = datetime.now().strftime("%H:%M")
+                    # FIX 2 — Add user message + thinking bubble, rerun to show immediately
+                    st.session_state.chat_history.append(
+                        {"role": "user", "content": question, "ts": ts})
+                    st.session_state.chat_history.append(
+                        {"role": "assistant", "content": "", "thinking": True, "ts": ""})
                     st.rerun()
 
-    # Handle send
-    if send_clicked and user_msg and user_msg.strip():
+    # ── Handle thinking state (quick questions) ──
+    if (st.session_state.chat_history and
+            st.session_state.chat_history[-1].get("thinking")):
+        # Remove thinking bubble, run pipeline, add real response
+        st.session_state.chat_history.pop()
+        question = st.session_state.chat_history[-1]["content"]
+        with st.spinner("Analyzing…"):
+            result = chat(question, history=st.session_state.chat_history[:-1])
+        ts = datetime.now().strftime("%H:%M")
         st.session_state.chat_history.append(
-            {"role": "user", "content": user_msg.strip()})
+            {"role": "assistant", "content": result["analysis"], "ts": ts})
+        st.rerun()
+
+    # ── Handle send ──
+    if send_clicked and user_msg and user_msg.strip():
+        ts = datetime.now().strftime("%H:%M")
+        st.session_state.chat_history.append(
+            {"role": "user", "content": user_msg.strip(), "ts": ts})
         with st.spinner("Analyzing…"):
             result = chat(user_msg.strip(), history=st.session_state.chat_history[:-1])
+        ts = datetime.now().strftime("%H:%M")
         st.session_state.chat_history.append(
-            {"role": "assistant", "content": result["analysis"]})
+            {"role": "assistant", "content": result["analysis"], "ts": ts})
+        st.session_state.clear_chat_input = True   # FIX — clear input on next run
         st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)  # close .chat-wrap
 
 
 # ═════════════════════════════════════════════════════════════
-# FOOTER
+# FIX 7 — FOOTER shortened to one line
 # ═════════════════════════════════════════════════════════════
 st.markdown(
     f'<div style="text-align:center;color:{MUTED};font-size:0.72rem;'
     f'margin-top:50px;padding:20px;border-top:1px solid {BORDER};">'
-    f'⚠️ CoinTrend is an AI-powered decision support tool. '
-    f'This is <strong>not a financial advice</strong>. '
-    f'Always do your own research before investing.<br><br>'
     f'<span style="background:linear-gradient(90deg,{BTC},{ETH});'
     f'-webkit-background-clip:text;-webkit-text-fill-color:transparent;'
-    f'font-weight:700;">CoinTrend</span> © 2026 — One Step Ahead of the Market'
+    f'font-weight:700;">CoinTrend</span>'
+    f' © 2026 — One Step Ahead of the Market &nbsp;·&nbsp; '
+    f'⚠️ <strong style="color:{MUTED};">Not financial advice</strong>'
     f'</div>',
     unsafe_allow_html=True
 )
