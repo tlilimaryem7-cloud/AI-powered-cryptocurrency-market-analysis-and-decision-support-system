@@ -40,8 +40,8 @@ DB_CONFIG = {
 # MODEL PATHS
 # ─────────────────────────────────────────────────────────────
 MODEL_PATHS = {
-    "btc": os.path.join(PROJECT_ROOT, "models", "saved_models", "btc_model.pkl"),
-    "eth": os.path.join(PROJECT_ROOT, "models", "saved_models", "eth_model.pkl"),
+    "btc": os.path.join(PROJECT_ROOT, "models", "saved_models", "btc_model_v2.pkl"),
+    "eth": os.path.join(PROJECT_ROOT, "models", "saved_models", "eth_model_v2.pkl"),
 }
 
 BACKUP_DIR = os.path.join(PROJECT_ROOT, "models", "saved_models", "backups")
@@ -50,27 +50,37 @@ os.makedirs(BACKUP_DIR, exist_ok=True)
 # ─────────────────────────────────────────────────────────────
 # FEATURES — same as training
 # ─────────────────────────────────────────────────────────────
-FEATURES = [
-    "price_to_ma7", "price_to_ma30", "price_to_ma50",
-    "rsi_14", "macd_histogram", "momentum_acceleration",
-    "volatility_7d", "volatility_21d", "bb_width", "bb_pct",
-    "spy_return", "spy_return_ma7", "spy_return_std7",
-    "dxy_return_ma7", "vix_ma14", "vix_regime",
-    "fear_greed_ma7", "fear_greed_lag1", "fear_greed_lag7",
-    "bull_bear_flag", "volatility_regime",
+# BTC — 20 SHAP-selected features (v2)
+FEATURES_BTC = [
+    "price_to_ma7", "rsi_14_lag1", "rsi_14", "bb_pct",
+    "macd_histogram", "momentum_acceleration", "price_lag1",
+    "spy_return", "rsi_14_lag3", "fear_greed_lag7",
+    "spy_return_ma7", "fear_greed_lag1", "volume_lag1",
+    "macd_lag1", "dxy_return_ma7", "macd_lag3",
+    "rsi_14_lag2", "price_lag3", "price_to_ma30", "volatility_7d",
 ]
+
+# ETH — 20 SHAP-selected features (v2)
+FEATURES_ETH = [
+    "rsi_14_lag1", "price_to_ma7", "rsi_14", "macd_histogram",
+    "bb_pct", "rsi_14_lag3", "momentum_acceleration", "spy_return",
+    "fear_greed_lag1", "macd_lag1", "fear_greed_lag7", "macd_lag3",
+    "spy_return_ma7", "volatility_21d", "price_lag1", "price_to_ma30",
+    "volatility_21d_lag3", "price_lag3", "volatility_7d", "vix_ma14",
+]
+
+FEATURES_MAP = {"btc": FEATURES_BTC, "eth": FEATURES_ETH}
+
+# All features needed for engineering (superset of both models)
+ALL_FEATURES = list(set(FEATURES_BTC + FEATURES_ETH))
 
 TICKERS = {"btc": "BTC-USD", "eth": "ETH-USD"}
 
 # ─────────────────────────────────────────────────────────────
 # IMPORTS — ML models
 # ─────────────────────────────────────────────────────────────
-from sklearn.ensemble         import (RandomForestClassifier,
-                                      GradientBoostingClassifier,
-                                      StackingClassifier)
-from sklearn.linear_model     import LogisticRegression
-from sklearn.metrics          import accuracy_score
-import xgboost as xgb
+from sklearn.ensemble         import GradientBoostingClassifier
+from sklearn.metrics          import accuracy_score, matthews_corrcoef
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -232,10 +242,21 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     vol_median              = df["volatility_21d"].rolling(90).median()
     df["volatility_regime"] = (df["volatility_21d"] > vol_median).astype(int)
 
+    # Lag features (required by v2 models)
+    for col, lags in [
+        ("rsi_14",         [1, 2, 3]),
+        ("macd",           [1, 3]),
+        ("volume",         [1]),
+        ("price",          [1, 3]),
+        ("volatility_21d", [3]),
+    ]:
+        for lag in lags:
+            df[f"{col}_lag{lag}"] = df[col].shift(lag)
+
     # Target
     df["target"] = (df["log_return_1d"] > 0).astype(int)
 
-    df = df.dropna(subset=FEATURES + ["target"]).reset_index(drop=True)
+    df = df.dropna(subset=ALL_FEATURES + ["target"]).reset_index(drop=True)
     print(f"  ✅ Features built — {len(df)} rows")
     return df
 
@@ -244,32 +265,18 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 # BLOCK 4 — BUILD NEW MODEL
 # ═══════════════════════════════════════════════════════════════
 def build_model(coin: str):
-    """Return a fresh untrained model with the same architecture."""
+    """Return a fresh untrained v2 model with Optuna-tuned hyperparameters."""
     if coin == "btc":
-        rf  = RandomForestClassifier(
-            n_estimators=200, max_depth=10, min_samples_leaf=20,
-            max_features="sqrt", random_state=42, n_jobs=-1
-        )
-        gb  = GradientBoostingClassifier(
-            n_estimators=100, max_depth=7, learning_rate=0.05,
-            min_samples_leaf=50, subsample=0.8, random_state=42
-        )
-        xgb_clf = xgb.XGBClassifier(
-            n_estimators=200, max_depth=3, learning_rate=0.01,
-            min_child_weight=50, subsample=1.0, colsample_bytree=0.8,
-            random_state=42, eval_metric="logloss", verbosity=0
-        )
-        return StackingClassifier(
-            estimators      = [("rf", rf), ("gb", gb), ("xgb", xgb_clf)],
-            final_estimator = LogisticRegression(random_state=42),
-            cv              = 5,
-            passthrough     = False,
-            n_jobs          = -1,
+        return GradientBoostingClassifier(
+            n_estimators=349, max_depth=4,
+            learning_rate=0.01438, min_samples_leaf=75,
+            subsample=0.621, random_state=42
         )
     else:  # eth
         return GradientBoostingClassifier(
-            n_estimators=100, max_depth=7, learning_rate=0.05,
-            min_samples_leaf=50, subsample=0.8, random_state=42
+            n_estimators=437, max_depth=6,
+            learning_rate=0.01777, min_samples_leaf=97,
+            subsample=0.507, random_state=42
         )
 
 
@@ -302,14 +309,18 @@ def train_and_evaluate(coin: str, df: pd.DataFrame) -> tuple:
     # Combine train + val for final training (standard practice)
     train_full = pd.concat([train, val], ignore_index=True)
 
+    features_list = FEATURES_MAP[coin]
+
     model = build_model(coin)
     print(f"\n  Training new {coin.upper()} model...")
-    model.fit(train_full[FEATURES], train_full["target"])
+    model.fit(train_full[features_list], train_full["target"])
 
     # Evaluate on test set
-    test_preds    = model.predict(test[FEATURES])
+    test_preds    = model.predict(test[features_list])
     test_accuracy = round(accuracy_score(test["target"], test_preds), 4)
-    print(f"  ✅ New model test accuracy: {test_accuracy*100:.1f}%")
+    test_mcc      = round(matthews_corrcoef(test["target"], test_preds), 4)
+    print(f"  ✅ New model test accuracy : {test_accuracy*100:.1f}%")
+    print(f"  ✅ New model MCC           : {test_mcc:.4f}")
 
     return (
         model,
@@ -323,15 +334,16 @@ def train_and_evaluate(coin: str, df: pd.DataFrame) -> tuple:
 # BLOCK 6 — EVALUATE OLD MODEL
 # ═══════════════════════════════════════════════════════════════
 def evaluate_old_model(coin: str, df: pd.DataFrame) -> float:
-    """Load old model and evaluate on the test set."""
+    """Load old v2 model and evaluate on the test set."""
     try:
-        old_model  = joblib.load(MODEL_PATHS[coin])
-        dates      = df["timestamp"]
-        test       = df[dates >= "2025-01-01"]
+        old_model     = joblib.load(MODEL_PATHS[coin])
+        features_list = FEATURES_MAP[coin]
+        dates         = df["timestamp"]
+        test          = df[dates >= "2025-01-01"]
         if test.empty:
             return 0.0
-        preds      = old_model.predict(test[FEATURES])
-        accuracy   = round(accuracy_score(test["target"], preds), 4)
+        preds    = old_model.predict(test[features_list])
+        accuracy = round(accuracy_score(test["target"], preds), 4)
         print(f"  Old model test accuracy : {accuracy*100:.1f}%")
         return accuracy
     except Exception as e:

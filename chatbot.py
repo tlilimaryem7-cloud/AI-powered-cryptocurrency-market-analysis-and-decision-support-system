@@ -456,17 +456,29 @@ def build_context(intent: str, coin: str | None,
             "=" * 50,
         ]
         feature_labels = {
+            # ── Momentum / Trend (both models)
             "rsi_14"               : "RSI-14",
+            "rsi_14_lag1"          : "RSI-14 (lag 1d)",
+            "rsi_14_lag3"          : "RSI-14 (lag 3d)",
             "macd_histogram"       : "MACD Histogram",
+            "macd_lag1"            : "MACD (lag 1d)",
             "momentum_acceleration": "Momentum Acceleration",
-            "volatility_21d"       : "Volatility 21d",
             "bb_pct"               : "Bollinger %B",
-            "vix_ma14"             : "VIX MA14",
-            "vix_regime"           : "VIX Regime (>20 = fear)",
-            "fear_greed_ma7"       : "Fear & Greed MA7",
-            "bull_bear_flag"       : "Bull/Bear Flag (1=bull)",
+            # ── Price
+            "price_to_ma7"         : "Price vs MA7",
+            "price_to_ma30"        : "Price vs MA30",
+            # ── Volatility (coin-specific -- shown only when available)
+            "volatility_7d"        : "Volatility 7d",
+            "volatility_21d"       : "Volatility 21d",
+            "volatility_21d_lag3"  : "Volatility 21d (lag 3d)",
+            # ── Macro
+            "spy_return"           : "SPY Return",
             "spy_return_ma7"       : "SPY Return MA7",
             "dxy_return_ma7"       : "DXY Return MA7",
+            "vix_ma14"             : "VIX MA14",
+            # ── Sentiment
+            "fear_greed_lag1"      : "Fear & Greed (lag 1d)",
+            "fear_greed_lag7"      : "Fear & Greed (lag 7d)",
         }
         for key, label in feature_labels.items():
             val = live_features.get(key)

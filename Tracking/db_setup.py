@@ -95,7 +95,7 @@ TABLES = {
             target_date       DATE           NOT NULL,       -- date the prediction is FOR
             predicted_direction VARCHAR(4)   NOT NULL,       -- 'UP' or 'DOWN'
             confidence        NUMERIC(5, 2)  NOT NULL,       -- model confidence 0-100%
-            model_version     VARCHAR(50)    DEFAULT 'v1',   -- track which model was used
+            model_version     VARCHAR(50)    DEFAULT 'v2',   -- track which model was used
             created_at        TIMESTAMP DEFAULT NOW(),
             UNIQUE (coin, prediction_date)                   -- one prediction per coin per day
         );

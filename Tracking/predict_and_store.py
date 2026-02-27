@@ -44,30 +44,35 @@ DB_CONFIG = {
 # MODEL PATHS
 # ─────────────────────────────────────────────────────────────
 MODEL_PATHS = {
-    "btc": os.path.join(PROJECT_ROOT, "models", "saved_models", "btc_model.pkl"),
-    "eth": os.path.join(PROJECT_ROOT, "models", "saved_models", "eth_model.pkl"),
+    "btc": os.path.join(PROJECT_ROOT, "models", "saved_models", "btc_model_v2.pkl"),
+    "eth": os.path.join(PROJECT_ROOT, "models", "saved_models", "eth_model_v2.pkl"),
 }
 
-MODEL_VERSION = "v1"
+MODEL_VERSION = "v2"
 
 # ─────────────────────────────────────────────────────────────
 # FEATURES — must match exactly what the models were trained on
 # ─────────────────────────────────────────────────────────────
-FEATURES = [
-    # Trend
-    "price_to_ma7", "price_to_ma30", "price_to_ma50",
-    # Momentum
-    "rsi_14", "macd_histogram", "momentum_acceleration",
-    # Volatility
-    "volatility_7d", "volatility_21d", "bb_width", "bb_pct",
-    # Macro
-    "spy_return", "spy_return_ma7", "spy_return_std7",
-    "dxy_return_ma7", "vix_ma14", "vix_regime",
-    # Sentiment
-    "fear_greed_ma7", "fear_greed_lag1", "fear_greed_lag7",
-    # Regime flags
-    "bull_bear_flag", "volatility_regime",
+# BTC — 20 SHAP-selected features (v2)
+FEATURES_BTC = [
+    "price_to_ma7", "rsi_14_lag1", "rsi_14", "bb_pct",
+    "macd_histogram", "momentum_acceleration", "price_lag1",
+    "spy_return", "rsi_14_lag3", "fear_greed_lag7",
+    "spy_return_ma7", "fear_greed_lag1", "volume_lag1",
+    "macd_lag1", "dxy_return_ma7", "macd_lag3",
+    "rsi_14_lag2", "price_lag3", "price_to_ma30", "volatility_7d",
 ]
+
+# ETH — 20 SHAP-selected features (v2)
+FEATURES_ETH = [
+    "rsi_14_lag1", "price_to_ma7", "rsi_14", "macd_histogram",
+    "bb_pct", "rsi_14_lag3", "momentum_acceleration", "spy_return",
+    "fear_greed_lag1", "macd_lag1", "fear_greed_lag7", "macd_lag3",
+    "spy_return_ma7", "volatility_21d", "price_lag1", "price_to_ma30",
+    "volatility_21d_lag3", "price_lag3", "volatility_7d", "vix_ma14",
+]
+
+FEATURES_MAP = {"btc": FEATURES_BTC, "eth": FEATURES_ETH}
 
 TODAY     = date.today()
 TOMORROW  = TODAY + timedelta(days=1)
@@ -202,8 +207,20 @@ def build_live_features(coin: str) -> pd.Series:
     vol_median              = df["volatility_21d"].rolling(90).median()
     df["volatility_regime"] = (df["volatility_21d"] > vol_median).astype(int)
 
+    # Lag features (required by v2 models)
+    for col, lags in [
+        ("rsi_14",         [1, 2, 3]),
+        ("macd",           [1, 3]),
+        ("volume",         [1]),
+        ("price",          [1, 3]),
+        ("volatility_21d", [3]),
+    ]:
+        for lag in lags:
+            df[f"{col}_lag{lag}"] = df[col].shift(lag)
+
     # Drop NaNs and return latest row
-    df = df.dropna(subset=FEATURES).reset_index(drop=True)
+    features_list = FEATURES_MAP[coin]
+    df = df.dropna(subset=features_list).reset_index(drop=True)
     if df.empty:
         raise ValueError(f"❌ No valid rows after feature engineering for {coin}")
 
@@ -220,7 +237,8 @@ def predict(coin: str, model) -> dict:
     print(f"\n  Building live features for {coin.upper()}...")
     latest = build_live_features(coin)
 
-    X = pd.DataFrame([latest[FEATURES]])
+    features_list = FEATURES_MAP[coin]
+    X = pd.DataFrame([latest[features_list]])
 
     prob       = model.predict_proba(X)[0]
     pred_class = int(model.predict(X)[0])

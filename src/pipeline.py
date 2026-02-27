@@ -367,6 +367,23 @@ df["log_volume"] = np.log(df["volume"].astype(float))
 
 print("  └─ Feature engineering complete ✅")
 
+# ── Lag features (required by BTC v2 + ETH v2 models)
+print("  ├─ Lag features...")
+for col, lags in [
+    ("rsi_14",        [1, 2, 3]),
+    ("macd",          [1, 3]),
+    ("volume",        [1]),
+    ("price",         [1, 3]),
+    ("volatility_21d",[3]),
+]:
+    for lag in lags:
+        df[f"{col}_lag{lag}"] = (
+            df.groupby("coin")[col]
+              .transform(lambda x, l=lag: x.shift(l))
+        )
+
+print("  └─ Lag features complete ✅")
+
 
 # ═══════════════════════════════════════════════════════════════
 # BLOCK 8 — DROP NaNs

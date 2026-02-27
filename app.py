@@ -535,32 +535,41 @@ def chart_macd(df, coin, days):
 # ─────────────────────────────────────────────────────────────
 def build_signals(feat_live, feat_macro):
     signals = []
-    rsi  = float(feat_live["rsi_14"])
-    macd = float(feat_live["macd_histogram"])
-    mom  = float(feat_live["momentum_acceleration"])
-    bull = int(feat_live["bull_bear_flag"]) == 1
+    rsi     = float(feat_live["rsi_14"])
+    macd    = float(feat_live["macd_histogram"])
+    mom     = float(feat_live["momentum_acceleration"])
+    bb      = float(feat_live["bb_pct"])
+    vol7    = float(feat_live["volatility_7d"])
     try:
-        vix = float(feat_macro["vix"])
-        dxy = float(feat_macro["dxy_return_ma7"])
-        fg  = float(feat_macro["fear_greed"])
+        spy_ma7 = float(feat_macro["spy_return_ma7"]) if "spy_return_ma7" in feat_macro.index else float(feat_macro["spy_return"])
+        dxy     = float(feat_macro["dxy_return_ma7"])
+        fg      = float(feat_macro["fear_greed"])
     except Exception:
-        vix, dxy, fg = 20.0, 0.0, 50.0
+        spy_ma7, dxy, fg = 0.0, 0.0, 50.0
 
+    # RSI
     if rsi <= 35:     signals.append(("RSI rising from oversold zone",           "bull"))
     elif rsi >= 65:   signals.append(("RSI approaching overbought territory",    "bear"))
     else:             signals.append((f"RSI neutral at {rsi:.0f}",               "neut"))
+    # MACD
     if macd > 0:      signals.append(("MACD histogram turning positive",         "bull"))
     else:             signals.append(("MACD histogram in negative territory",    "bear"))
+    # Momentum
     if mom > 0.01:    signals.append(("Short-term momentum accelerating upward", "bull"))
     elif mom < -0.01: signals.append(("Short-term momentum decelerating",        "bear"))
-    if vix < 18:      signals.append(("Low VIX — risk-on environment",           "bull"))
-    elif vix > 28:    signals.append(("High VIX — elevated market fear",         "bear"))
-    if dxy < -0.001:  signals.append(("Dollar weakening — bullish tailwind",     "bull"))
-    elif dxy > 0.001: signals.append(("Dollar strengthening — headwind",         "bear"))
+    else:             signals.append(("Momentum flat — no clear direction",      "neut"))
+    # Bollinger %B
+    if bb > 0.8:      signals.append(("Price near upper Bollinger band",         "bear"))
+    elif bb < 0.2:    signals.append(("Price near lower Bollinger band",         "bull"))
+    else:             signals.append(("Price mid Bollinger band — neutral",      "neut"))
+    # SPY MA7
+    if spy_ma7 > 0.002:  signals.append(("SPY trending up — risk-on tailwind",  "bull"))
+    elif spy_ma7 < -0.002: signals.append(("SPY trending down — risk-off headwind", "bear"))
+    else:             signals.append(("SPY return flat — neutral macro",         "neut"))
+    # Fear & Greed
     if fg <= 25:      signals.append(("Extreme Fear — contrarian opportunity",   "neut"))
     elif fg >= 70:    signals.append(("Extreme Greed — caution advised",         "bear"))
-    if bull:          signals.append(("Price above MA50 — bull market regime",   "bull"))
-    else:             signals.append(("Price below MA50 — bear market regime",   "bear"))
+    else:             signals.append((f"Sentiment neutral at {fg:.0f}",          "neut"))
     return signals[:6]
 
 
@@ -638,8 +647,8 @@ tt_mom  = tt("Momentum",
     "Positive: price accelerating. Negative: momentum slowing.")
 tt_vol  = tt("Volatility 7d",
     "High = larger swings. Low = calmer market.")
-tt_reg  = tt("Market Regime",
-    "Bull: price above MA50. Bear: price below MA50.")
+tt_spy  = tt("SPY Return MA7",
+    "7-day avg of S&P500 daily return. Positive = risk-on tailwind for crypto. Negative = risk-off headwind.")
 
 
 # ═════════════════════════════════════════════════════════════
@@ -755,19 +764,29 @@ st.markdown(f'<div style="padding:4px 0 12px 0;">{pills}</div>', unsafe_allow_ht
 # ═════════════════════════════════════════════════════════════
 st.markdown('<div class="section-title">📊 Signal Matrix</div>', unsafe_allow_html=True)
 
-rsi_v  = float(feat_live["rsi_14"])
-macd_v = float(feat_live["macd_histogram"])
-bb_v   = float(feat_live["bb_pct"])
-mom_v  = float(feat_live["momentum_acceleration"])
-vol7_v = float(feat_live["volatility_7d"]) * 100
-bull_v = int(feat_live["bull_bear_flag"]) == 1
+rsi_v   = float(feat_live["rsi_14"])
+macd_v  = float(feat_live["macd_histogram"])
+bb_v    = float(feat_live["bb_pct"])
+mom_v   = float(feat_live["momentum_acceleration"])
+vol7_v  = float(feat_live["volatility_7d"]) * 100
+try:
+    spy_ma7_v = float(feat_macro["spy_return_ma7"])
+except Exception:
+    spy_ma7_v = 0.0
 
 ri,  rc,  _ = rsi_state(rsi_v)
 mi,  mc_, _ = macd_state(macd_v)
 bi,  bc,  _ = bb_state(bb_v)
 mo,  moc, _ = mom_state(mom_v)
 vol_c = RED if vol7_v > 3 else GREEN
-reg_c = GREEN if bull_v else RED
+
+# SPY MA7 state
+if spy_ma7_v > 0.002:
+    spy_i, spy_c = "Tailwind ↑", GREEN
+elif spy_ma7_v < -0.002:
+    spy_i, spy_c = "Headwind ↓", RED
+else:
+    spy_i, spy_c = "Neutral →",  MUTED
 
 sc1,sc2,sc3 = st.columns(3)
 sc4,sc5,sc6 = st.columns(3)
@@ -778,8 +797,7 @@ matrix = [
     (sc3, tt_bb,   f"{bb_v:.2f}",    bi,                                   bc,   bb_v*100),
     (sc4, tt_mom,  f"{mom_v:.4f}",   mo,                                   moc,  50+mom_v*1000),
     (sc5, tt_vol,  f"{vol7_v:.2f}%", "High ⚠️" if vol7_v>3 else "Low ✅", vol_c, min(vol7_v*10,100)),
-    (sc6, tt_reg,  "Bull 🐂" if bull_v else "Bear 🐻",
-                    "Above MA50" if bull_v else "Below MA50",               reg_c, 100 if bull_v else 0),
+    (sc6, tt_spy,  f"{spy_ma7_v:.4f}", spy_i,                              spy_c, 50+spy_ma7_v*5000),
 ]
 for col, lbl, val, interp, icol, gpct in matrix:
     with col:

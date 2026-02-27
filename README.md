@@ -47,16 +47,16 @@ Cryptocurrency markets are driven by both **technical signals** (RSI, MACD, vola
                         │
 ┌───────────────────────▼─────────────────────────────────────┐
 │                   FEATURE PIPELINE                          │
-│  preprocessing → 21 engineered features → crypto_features  │
+│  preprocessing → 20 SHAP-selected features per coin        │
 └───────────────────────┬─────────────────────────────────────┘
                         │
           ┌─────────────┴──────────────┐
           │                            │
 ┌─────────▼──────────┐    ┌────────────▼───────────┐
-│   BTC MODEL        │    │   ETH MODEL             │
-│   Stacking         │    │   Gradient Boosting     │
-│   RF+GB+XGB→LR     │    │   (tuned)               │
-│   73.8% accuracy   │    │   70.2% accuracy        │
+│   BTC MODEL v2     │    │   ETH MODEL v2          │
+│   Gradient         │    │   Gradient Boosting     │
+│   Boosting         │    │   (Optuna-tuned)        │
+│   80.1% accuracy   │    │   73.5% accuracy        │
 └─────────┬──────────┘    └────────────┬────────────┘
           └─────────────┬──────────────┘
                         │
@@ -84,8 +84,9 @@ Cryptocurrency markets are driven by both **technical signals** (RSI, MACD, vola
 
 ### 📈 Price Prediction
 - Binary classification: **UP / DOWN** for next trading day
-- BTC: Stacking ensemble (Random Forest + Gradient Boosting + XGBoost → Logistic Regression)
-- ETH: Tuned Gradient Boosting
+- BTC: GradientBoostingClassifier (Optuna-tuned), 20 SHAP-selected features
+- ETH: GradientBoostingClassifier (Optuna-tuned), 20 SHAP-selected features (different set)
+- Separate model configs, hyperparameters, and feature lists per coin
 - Live features computed on-the-fly from yfinance
 
 ### 🤖 AI Chatbot
@@ -134,13 +135,17 @@ AI-powered-cryptocurrency-market-analysis-and-decision-support-system/
 │   ├── raw/
 │   │   └── crypto_raw.csv              # Raw merged data
 │   └── processed/
-│       └── crypto_features.csv         # 21 engineered features
+│       └── crypto_features.csv         # Engineered features incl. lag features
 │
 ├── models/
 │   └── saved_models/
-│       ├── btc_model.pkl               # BTC Stacking model
-│       ├── eth_model.pkl               # ETH Gradient Boosting model
-│       └── backups/                    # Versioned model backups
+│       ├── btc_model_v2.pkl            # BTC Gradient Boosting (Optuna-tuned)
+│       ├── btc_features_v2.pkl         # BTC SHAP-selected feature list
+│       ├── btc_metadata_v2.json        # BTC model metadata
+│       ├── eth_model_v2.pkl            # ETH Gradient Boosting (Optuna-tuned)
+│       ├── eth_features_v2.pkl         # ETH SHAP-selected feature list
+│       ├── eth_metadata_v2.json        # ETH model metadata
+│       └── backups/                    # Versioned model backups (incl. v1)
 │
 ├── src/
 │   ├── pipeline.py                     # Full data + feature pipeline
@@ -265,16 +270,33 @@ python retrain.py --force both
 | alternative.me | Fear & Greed Index (0–100) | Daily |
 | Tavily API | Crypto + macro news articles | Live |
 
-### Feature Engineering (21 features)
+### Feature Engineering
 
+All features are computed coin-by-coin. After full engineering, each model uses its own **20 SHAP-selected features** (different sets for BTC and ETH).
+
+#### BTC — 20 Features
 | Category | Features |
 |---|---|
-| Trend | price_to_ma7, price_to_ma30, price_to_ma50 |
-| Momentum | rsi_14, macd_histogram, momentum_acceleration |
-| Volatility | volatility_7d, volatility_21d, bb_width, bb_pct |
-| Macro | spy_return, spy_return_ma7, spy_return_std7, dxy_return_ma7, vix_ma14, vix_regime |
-| Sentiment | fear_greed_ma7, fear_greed_lag1, fear_greed_lag7 |
-| Regime Flags | bull_bear_flag, volatility_regime |
+| Trend | price_to_ma7, price_to_ma30 |
+| Momentum | rsi_14, rsi_14_lag1, rsi_14_lag2, rsi_14_lag3, macd_histogram, macd_lag1, macd_lag3, momentum_acceleration, bb_pct |
+| Volatility | volatility_7d |
+| Price Lags | price_lag1, price_lag3 |
+| Volume | volume_lag1 |
+| Macro | spy_return, spy_return_ma7, dxy_return_ma7 |
+| Sentiment | fear_greed_lag1, fear_greed_lag7 |
+
+#### ETH — 20 Features
+| Category | Features |
+|---|---|
+| Trend | price_to_ma7, price_to_ma30 |
+| Momentum | rsi_14, rsi_14_lag1, rsi_14_lag3, macd_histogram, macd_lag1, macd_lag3, momentum_acceleration, bb_pct |
+| Volatility | volatility_7d, volatility_21d, volatility_21d_lag3 |
+| Price Lags | price_lag1, price_lag3 |
+| Macro | spy_return, spy_return_ma7, vix_ma14 |
+| Sentiment | fear_greed_lag1, fear_greed_lag7 |
+
+#### Lag Features (shared, computed before subsetting)
+`rsi_14_lag1/2/3`, `macd_lag1/3`, `volume_lag1`, `price_lag1/3`, `volatility_21d_lag3`
 
 **Target:** `log_return_1d > 0` → 1 (UP) else 0 (DOWN)
 
@@ -289,31 +311,31 @@ python retrain.py --force both
 | Validation | 2023 → 2024 | Recovery + 2024 Bull Run |
 | Test | 2025 → 2026 | Institutional Era |
 
-### BTC — Stacking Ensemble
-```
-Base Learners:
-  ├── Random Forest      (n=200, depth=10, min_leaf=20)
-  ├── Gradient Boosting  (n=100, depth=7, lr=0.05)
-  └── XGBoost            (n=200, depth=3, lr=0.01)
-        │
-        ▼
-Meta-Learner: Logistic Regression (5-fold CV)
-```
-
-### ETH — Gradient Boosting
+### BTC — GradientBoostingClassifier v2 (Optuna-tuned)
 ```
 GradientBoostingClassifier(
-    n_estimators=100, max_depth=7,
-    learning_rate=0.05, min_samples_leaf=50,
-    subsample=0.8
+    n_estimators=349, max_depth=4,
+    learning_rate=0.01438, min_samples_leaf=75,
+    subsample=0.621
 )
+Features : 20 SHAP-selected
+```
+
+### ETH — GradientBoostingClassifier v2 (Optuna-tuned)
+```
+GradientBoostingClassifier(
+    n_estimators=437, max_depth=6,
+    learning_rate=0.01777, min_samples_leaf=97,
+    subsample=0.507
+)
+Features : 20 SHAP-selected (different set from BTC)
 ```
 
 ### Results
-| Model | Test Accuracy | AUC |
-|---|---|---|
-| BTC Stacking | **73.8%** | 0.78 |
-| ETH Gradient Boosting | **70.2%** | 0.74 |
+| Model | Test Accuracy | MCC | AUC | Train/Test Gap |
+|---|---|---|---|---|
+| BTC v2 | **80.1%** | 0.608 | 0.874 | 0.09 ✅ |
+| ETH v2 | **73.5%** | 0.473 | 0.821 | 0.08 ✅ |
 
 ---
 
@@ -389,10 +411,10 @@ Daily at 00:30 AM (Task Scheduler):
 
 | Component | Result |
 |---|---|
-| BTC Model Accuracy | 73.8% on 2025–2026 test set |
-| ETH Model Accuracy | 70.2% on 2025–2026 test set |
-| After Auto-Retraining BTC | 73.3% → 73.8% ✅ |
-| After Auto-Retraining ETH | 69.7% → 70.2% ✅ |
+| BTC Model Accuracy (v2) | **80.1%** on 2025–2026 test set |
+| BTC MCC / AUC | 0.608 / 0.874 |
+| ETH Model Accuracy (v2) | **73.5%** on 2025–2026 test set |
+| ETH MCC / AUC | 0.473 / 0.821 |
 | Chatbot Response Time | ~5–8 seconds (parallel news fetch) |
 | Daily Pipeline Runtime | ~14 seconds |
 | Database Size | ~3.5 MB per coin per 5 years |

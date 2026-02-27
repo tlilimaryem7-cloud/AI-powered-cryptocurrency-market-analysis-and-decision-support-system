@@ -2,7 +2,7 @@
 # LIVE PIPELINE — BTC/ETH LIVE FEATURE ENGINEERING
 # ============================================================
 # Input  : fetches last 120 days of live data (warmup window)
-# Output : single row of 21 features ready for model prediction
+# Output : single row of 20 features ready for model prediction
 #
 # Warmup rationale:
 #   - ma_50           needs 50 days
@@ -18,6 +18,9 @@
 #            For the explanation intent in chatbot.py, features
 #            are built once and shared between both calls,
 #            cutting ~3-4s of redundant API calls.
+#   ✅ v2  — Separate FEATURES_BTC / FEATURES_ETH (20 each,
+#            SHAP-selected). Separate model files per coin
+#            (*_model_v2.pkl). Lag features added to Block 7.
 #
 # Run    : python live_pipeline.py --coin btc
 #          python live_pipeline.py --coin eth
@@ -37,21 +40,26 @@ from datetime import datetime, timedelta
 # ─────────────────────────────────────────────────────────────
 WARMUP_DAYS = 120
 MODELS_PATH = r"C:\Users\tlili\OneDrive\Bureau\Bootcamp\AI-powered-cryptocurrency-market-analysis-and-decision-support-system\models\saved_models"
-FEATURES = [
-    # Trend
-    "price_to_ma7", "price_to_ma30", "price_to_ma50",
-    # Momentum
-    "rsi_14", "macd_histogram", "momentum_acceleration",
-    # Volatility
-    "volatility_7d", "volatility_21d", "bb_width", "bb_pct",
-    # Macro
-    "spy_return", "spy_return_ma7", "spy_return_std7",
-    "dxy_return_ma7", "vix_ma14", "vix_regime",
-    # Sentiment
-    "fear_greed_ma7", "fear_greed_lag1", "fear_greed_lag7",
-    # Regime flags
-    "bull_bear_flag", "volatility_regime",
+# BTC — 20 SHAP-selected features (Optuna-tuned model v2)
+FEATURES_BTC = [
+    "price_to_ma7", "rsi_14_lag1", "rsi_14", "bb_pct",
+    "macd_histogram", "momentum_acceleration", "price_lag1",
+    "spy_return", "rsi_14_lag3", "fear_greed_lag7",
+    "spy_return_ma7", "fear_greed_lag1", "volume_lag1",
+    "macd_lag1", "dxy_return_ma7", "macd_lag3",
+    "rsi_14_lag2", "price_lag3", "price_to_ma30", "volatility_7d",
 ]
+
+# ETH — 20 SHAP-selected features (Optuna-tuned model v2)
+FEATURES_ETH = [
+    "rsi_14_lag1", "price_to_ma7", "rsi_14", "macd_histogram",
+    "bb_pct", "rsi_14_lag3", "momentum_acceleration", "spy_return",
+    "fear_greed_lag1", "macd_lag1", "fear_greed_lag7", "macd_lag3",
+    "spy_return_ma7", "volatility_21d", "price_lag1", "price_to_ma30",
+    "volatility_21d_lag3", "price_lag3", "volatility_7d", "vix_ma14",
+]
+
+FEATURES_MAP = {"btc": FEATURES_BTC, "eth": FEATURES_ETH}
 
 # VIX outlier caps (from training data — must stay fixed)
 VIX_CHANGE_P01 = -4.65
@@ -253,21 +261,33 @@ def build_live_features(coin: str) -> pd.Series:
     vol_median              = df["volatility_21d"].rolling(90).median()
     df["volatility_regime"] = (df["volatility_21d"] > vol_median).astype(int)
 
+    # ── Lag features (required by v2 models)
+    for col, lags in [
+        ("rsi_14",         [1, 2, 3]),
+        ("macd",           [1, 3]),
+        ("volume",         [1]),
+        ("price",          [1, 3]),
+        ("volatility_21d", [3]),
+    ]:
+        for lag in lags:
+            df[f"{col}_lag{lag}"] = df[col].shift(lag)
+
     print("  └─ Feature engineering complete ✅")
 
     # ── BLOCK 8 : Extract last row
-    last_row = df.dropna(subset=FEATURES).iloc[-1]
+    features_list = FEATURES_MAP[coin.lower()]
+    last_row = df.dropna(subset=features_list).iloc[-1]
 
-    missing = [f for f in FEATURES if f not in last_row.index or pd.isna(last_row[f])]
+    missing = [f for f in features_list if f not in last_row.index or pd.isna(last_row[f])]
     if missing:
         raise ValueError(f"❌ Missing features: {missing}")
 
     print(f"\n  Date        : {last_row['timestamp'].date()}")
     print(f"  Price       : ${last_row['price']:,.2f}")
-    print(f"  Features    : {len(FEATURES)} ✅")
-    print(f"  NaN check   : {sum(pd.isna(last_row[f]) for f in FEATURES)} (should be 0)")
+    print(f"  Features    : {len(features_list)} ✅")
+    print(f"  NaN check   : {sum(pd.isna(last_row[f]) for f in features_list)} (should be 0)")
 
-    return last_row[FEATURES]
+    return last_row[features_list]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -303,14 +323,17 @@ def predict(coin: str, features: pd.Series = None) -> dict:
     else:
         print(f"\n  ℹ️  predict() received pre-built features — skipping download ✅")
 
-    # Load model
-    model_path = os.path.join(MODELS_PATH, f"{coin}_model.pkl")
+    # Load v2 model
+    model_path = os.path.join(MODELS_PATH, f"{coin}_model_v2.pkl")
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"❌ Model not found: {model_path}")
     model = joblib.load(model_path)
 
+    # Coin-specific feature list
+    features_list = FEATURES_MAP[coin]
+
     # Predict
-    X = pd.DataFrame([features], columns=FEATURES)
+    X = pd.DataFrame([features], columns=features_list)
     direction  = model.predict(X)[0]
     confidence = model.predict_proba(X)[0][direction]
 
