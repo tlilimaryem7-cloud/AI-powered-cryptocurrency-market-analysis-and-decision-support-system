@@ -29,7 +29,7 @@ Cryptocurrency markets are driven by both **technical signals** (RSI, MACD, vola
 
 **CoinTrend AI** solves this by building a system that:
 
-1. Uses **historical + live market data** and **ML/DL models** to predict the future price direction of BTC and ETH
+1. Uses **historical + live market data** and **ML models** to predict the future price direction of BTC and ETH
 2. Retrieves the **latest macro-economic and crypto news** from the web
 3. Combines both to **explain market behaviour** and answer user questions via a chatbot
 4. Provides a **real-time Streamlit dashboard** with charts, predictions, and the chatbot
@@ -98,7 +98,7 @@ Cryptocurrency markets are driven by both **technical signals** (RSI, MACD, vola
 ### 📊 Streamlit Dashboard
 - Coin selector (BTC / ETH)
 - Historical price chart
-- Real-time technical indicators (RSI, MACD, Fear & Greed, VIX)
+- Daily technical indicators (RSI, MACD, Fear & Greed, VIX)
 - Prediction chart with confidence %
 - Embedded chatbot panel
 
