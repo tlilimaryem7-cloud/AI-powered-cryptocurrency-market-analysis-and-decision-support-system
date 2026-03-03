@@ -111,7 +111,7 @@ def search(query: str, max_results: int = MAX_RESULTS_PER_QUERY) -> list:
                 "content"        : clean_content(r.get("content", "")),
                 "score"          : round(r.get("score", 0.0), 4),
                 "published_date" : published_date,
-                "recency_score"  : compute_recency_score(published_date) if published_date else 0.8,
+                "recency_score"  : compute_recency_score(published_date),
             })
         return articles
     except Exception as e:
