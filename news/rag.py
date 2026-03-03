@@ -153,7 +153,7 @@ def retrieve(question: str, articles: list, coin: str,
     Scoring formula:
         final = (tfidf_sim * 0.50)
               + (recency   * 0.20)
-              + (kw_boost  * 0.20)
+              + (kw_boost_normalized * 0.20)
               + (tavily_sc * 0.10)
 
     Parameters
@@ -198,20 +198,20 @@ def retrieve(question: str, articles: list, coin: str,
         recency   = article.get("recency_score", 0.3)   # now a real value from tavily_fetcher
         tavily_sc = article.get("score", 0.0)
 
+        kw_boost_normalized = kw_boost / 0.25  # normalize [0, 0.25] → [0, 1]
         final_score = (
-            (tfidf_sim * 0.50) +
-            (recency   * 0.20) +
-            (kw_boost  * 0.20) +
-            (tavily_sc * 0.10)
-        )
-
+            (tfidf_sim          * 0.50) +
+            (recency            * 0.20) +
+            (kw_boost_normalized * 0.20) +
+            (tavily_sc          * 0.10)
+        )    
         scored.append({
             **article,
             "relevance_score": round(final_score, 4),
             "score_breakdown": {
                 "tfidf"  : round(tfidf_sim, 4),
                 "recency": round(recency,   4),
-                "keyword": round(kw_boost,  4),
+                "keyword": round(kw_boost_normalized,  4),
                 "tavily" : round(tavily_sc, 4),
             }
         })
