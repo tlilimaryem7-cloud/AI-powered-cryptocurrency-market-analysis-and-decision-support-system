@@ -126,8 +126,11 @@ def detect_intent_llm(question: str, history: list = None) -> tuple:
             if last_user_msg:
                  context_hint = (
                     f"\nIMPORTANT: The previous user message was: '{last_user_msg}'. "
-                    f"If the current message is a follow-up with no crypto keywords, "
-                    f"inherit the intent from the previous message instead of returning off_topic or factual_crypto."
+                    f"Only inherit the previous intent if the current message is a SHORT follow-up "
+                    f"(e.g. 'why?', 'tell me more', 'and?', 'what about ETH?'). "
+                    f"If the current message is about a completely DIFFERENT topic unrelated to crypto "
+                    f"(weather, sports, food, politics, etc.), classify it as off_topic — "
+                    f"do NOT inherit the previous intent."
                 )
 
         response = client.chat.completions.create(

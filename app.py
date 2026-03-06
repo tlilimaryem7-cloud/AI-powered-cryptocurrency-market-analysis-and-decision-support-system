@@ -202,9 +202,8 @@ st.markdown(f"""
   }}
   .chat-history {{
     background:{NAVY}; border:1px solid {BORDER}; border-radius:14px;
-    padding:18px; min-height:320px; max-height:420px;
-    overflow-y:auto; margin-bottom:18px;
-    scroll-behavior:smooth;
+    padding:18px; min-height:320px;
+    margin-bottom:18px;
   }}
   .chat-bubble-user {{
     background:linear-gradient(135deg,#1e40af,#2563eb);
@@ -285,10 +284,14 @@ def md_to_html(text: str) -> str:
     """Convert basic markdown to HTML for chat bubble rendering."""
     text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
     text = re.sub(r'\*(.+?)\*',     r'<em>\1</em>',         text)
+    # Handle "1.\n* item" pattern (numbered then bullet on next line)
+    text = re.sub(r'(?m)^\d+\.\s*\n[\*\-•]\s*(.+)$', r'<li>\1</li>', text)
+    # Handle normal "1. item" numbered lists
     text = re.sub(r'(?m)^\d+\.\s+(.+)$', r'<li>\1</li>', text)
-    text = re.sub(r'(<li>.*?</li>)+',    r'<ol>\g<0></ol>', text, flags=re.DOTALL)
+    text = re.sub(r'(<li>.*?</li>)+', lambda m: f'<ol>{m.group(0)}</ol>', text, flags=re.DOTALL)
+    # Remaining bullet points not already wrapped
     text = re.sub(r'(?m)^[\*\-•]\s+(.+)$', r'<li>\1</li>', text)
-    text = re.sub(r'(<li>.*?</li>)+',       r'<ul>\g<0></ul>', text, flags=re.DOTALL)
+    text = re.sub(r'(<li>.*?</li>)+', lambda m: f'<ul>{m.group(0)}</ul>' if '<ol>' not in m.group(0) else m.group(0), text, flags=re.DOTALL)
     text = text.replace('\n', '<br>')
     return text
 
@@ -881,13 +884,7 @@ with st.container():
             f'<div class="chat-history" id="chat-history-box">{bubbles}</div>',
             unsafe_allow_html=True)
 
-        # FIX 1 — Auto-scroll to bottom
-        st.markdown("""
-        <script>
-          const chatBox = document.getElementById('chat-history-box');
-          if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
-        </script>
-        """, unsafe_allow_html=True)
+
     else:
         st.markdown(
             f'<div class="chat-history">'
